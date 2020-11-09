@@ -1,0 +1,30 @@
+[Image2Weahter DATA]
+Root : /mnt/fs2/2018/matsuzaki/dataset_fromnitta/Image/
+Base : \\FS2\share\2018\matsuzaki\results\image2weather
+
+sepalated_data.pkl around 180k data (train:test:val = 2:1:1)
+sepalated_mini_data.pkl around 30k data (train:test:val = 2:1:1)
+
+[FlickrWeatherData]
+Root : /mnt/fs2/2019/Takamuro/db/photos_usa_2016_outdoor
+Base : \\FS2\share\2018\matsuzaki\results\flickr_data
+
+ALL : \\fs2\share\2019\Takamuro\m2_research\flicker_data\outdoor1100000_withweather_con_rain.pkl
+L<2.5 : df_con_less25.pkl (train:test = df[:len(df)//2] : df[len(df)//2:])
+
+
+[Checkpoint]
+
+#Class transfer
+Classifer(pretrain): /mnt/data2/matsuzaki/repo/weather_transfer/cp/classifier/res_aug_5_cls/resnet101_95.pt
+Transfer: /mnt/fs2/2018/matsuzaki/results/cp/transfer_class/i2w_res_aug_5_cls_n/i2w_res_aug_5_cls_n_e0026.pt
+
+#Transfer
+Estimator(pretrain): /mnt/data2/matsuzaki/repo/weather_transfer/cp/estimator/out110_res101_less25_c2/resnet50_10.pt
+Transfer: /mnt/fs2/2018/matsuzaki/results/cp/out110_res101_e10_less25/out110_res101_e10_less25_e0017.pt
+ええ感じやったやつ: /mnt/fs2/2018/matsuzaki/results/cp/cunet_999/cunet_999_e0080.pt
+
+flicker train data : "/mnt/fs2/2018/matsuzaki/results/flickr_data/df_con_train.pkl"
+
+[Classifer(eval)]
+Classifer: /mnt/data2/matsuzaki/repo/weather_transfer/cp/classifier/i2w_res101_val_n/resnet101_95.pt
