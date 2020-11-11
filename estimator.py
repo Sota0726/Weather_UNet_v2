@@ -8,10 +8,10 @@ from tqdm import trange
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--image_root', type=str,
-                    default='/mnt/HDD8T/takamuro/dataset/photos_usa_2016')
+                    default='/mnt/HDD8T/takamuro/dataset/photos_usa_2016-2017')
 parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/okada/from_nitta/parm_0.3/sepalated_data_wo-outlier.pkl')
-parser.add_argument('--save_path', type=str, default='cp/estimator/single')
+                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_06/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_WO-outlier-gray_duplicate.pkl')
+parser.add_argument('--save_path', type=str, default='cp/estimator')
 parser.add_argument('--name', type=str, default='noname-estimator')
 parser.add_argument('--gpu', type=str, default='0')
 parser.add_argument('--input_size', type=int, default=224)
@@ -21,9 +21,9 @@ parser.add_argument('--num_epoch', type=int, default=100)
 parser.add_argument('--batch_size', '-bs', type=int, default=64)
 parser.add_argument('--num_workers', type=int, default=64)
 parser.add_argument('--mode', type=str, default='T', help='T(Train data) or E(Evaluate data)')
-parser.add_argument('--multi', action='store_true')
 parser.add_argument('--augmentation', action='store_true')
 parser.add_argument('--pre_trained', action='store_true')
+parser.add_argument('--sampler', action='store_true')
 args = parser.parse_args()
 
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
@@ -41,11 +41,14 @@ from dataset import FlickrDataLoader
 from sampler import ImbalancedDatasetSampler
 from ops import soft_transform, l1_loss, adv_loss
 
+name = '{}_aug-{}_sampler-{}_PreTrained-{}_dataset-{}'.format(args.name, args.augmentation, args.sampler, args.pre_trained,
+                                                              args.pkl_path.split('/')[-1].split('.')[0])
+
 comment = '_lr-{}_bs-{}_ne-{}_x{}_name-{}'.format(args.lr,
                                                   args.batch_size,
                                                   args.num_epoch,
                                                   args.input_size,
-                                                  args.name)
+                                                  name)
 writer = SummaryWriter(comment=comment)
 
 save_dir = os.path.join(args.save_path, args.name)
@@ -68,8 +71,6 @@ if args.augmentation:
 else:
     train_transform = transforms.Compose([
         transforms.Resize((args.input_size,)*2),
-        transforms.RandomRotation(10),
-        transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
@@ -82,25 +83,14 @@ test_transform = transforms.Compose([
 
 transform = {'train': train_transform, 'test': test_transform}
 
-# train_data_rate = 0.5
-# pivot = int(len(df) * train_data_rate)
-
-# if args.mode == 'P':
-#     df_sep = {'train': df[:pivot], 'test': df[pivot:]}
-# elif args.mode == 'E':  # for evaluation
-#     df_sep = {'train': df[pivot:], 'test': df[:pivot]}
-# else:
-#     raise NotImplementedError
-
-# load data
 
 df = pd.read_pickle(args.pkl_path)
 print('{} data were loaded'.format(len(df)))
 
-cols = ['clouds', 'temp', 'humidity', 'pressure', 'windspeed']
-# cols = ['temp']
+# cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'HeatIndexC', 'FeelsLikeC', 'DewPointC']
+cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'FeelsLikeC', 'DewPointC']
 
-df_ = df[df['mode'] == 'train'].loc[:, cols].fillna(0)
+df_ = df.loc[:, cols].fillna(0)
 df_mean = df_.mean()
 df_std = df_.std()
 df.loc[:, cols] = (df.loc[:, cols] - df_mean) / df_std
@@ -123,12 +113,20 @@ loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s],
 train_set = loader('train')
 test_set = loader('test')
 
-train_loader = torch.utils.data.DataLoader(
-        train_set,
-        sampler=ImbalancedDatasetSampler(train_set),
-        drop_last=True,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers)
+if args.sampler:
+    train_loader = torch.utils.data.DataLoader(
+            train_set,
+            sampler=ImbalancedDatasetSampler(train_set),
+            drop_last=True,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers)
+else:
+    train_loader = torch.utils.data.DataLoader(
+            train_set,
+            shuffle=True,
+            drop_last=True,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers)
 
 test_loader = torch.utils.data.DataLoader(
         test_set,
@@ -143,24 +141,22 @@ if not args.pre_trained:
     model = models.resnet101(pretrained=False, num_classes=num_classes)
 else:
     model = models.resnet101(pretrained=True)
-    ct = 0
-    for child in model.children():
-        ct += 1
-        if ct < 8:
-            for param in child.parameters():
-                param.requires_grad = False
+    # ct = 0
+    # for child in model.children():
+    #     ct += 1
+    #     if ct < 8:
+    #         for param in child.parameters():
+    #             param.requires_grad = False
     num_features = model.fc.in_features
     model.fc = nn.Linear(num_features, num_classes)
 
-model.cuda()
-if args.multi:
-    model = nn.DataParallel(model)
+model.to('cuda')
 
 # train setting
 opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
 
-criterion = nn.MSELoss(reduction='none')
-# criterion = nn.L1Loss(reduction='none')
+criterion = nn.MSELoss()
+# criterion = nn.L1Loss()
 
 eval_per_iter = 100
 save_per_epoch = 5
@@ -181,9 +177,7 @@ for epoch in tqdm_iter:
         opt.zero_grad()
         outputs = model(inputs)
         loss = criterion(outputs, labels)
-        loss = torch.mean(loss, dim=0)
-        gradients = torch.FloatTensor([1.0, 1.0, 1.0, 1.0, 1.0]).to('cuda')
-        loss.backward(gradients)
+        loss.backward()
         opt.step()
 
         # diff_l1 = l1_loss(outputs.detach(), labels)

@@ -8,6 +8,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.datasets import DatasetFolder
 from torchvision.datasets.folder import default_loader
+# from torchvision.io import read_image
 
 
 def _collate_fn(batch):
@@ -32,23 +33,13 @@ class FlickrDataLoader(Dataset):
         self.columns = columns
         self.photo_id = df['photo'].to_list()
         self.class_id = class_id
-        # df_ = df.loc[:, columns].fillna(0)
-        # self.conditions = (df_ - df_.mean()) / df_.std()
         self.conditions = df.loc[:, columns]
-        if imbalance:
-            # --- master --- #
-            # self.labels = df['w_condition']
-            # -------------- #
-            # --- experiment2 --- #
-            self.labels = df['condition2']
-            # ------------------- #
-        else:
-            self.labels = df['condition2']
+        self.labels = df['condition']
         # self.cls_li = sorted(self.labels.unique())
         self.cls_li = ['Clear', 'Clouds', 'Rain', 'Snow', 'Mist']
         self.num_classes = len(columns)
         self.transform = transform
-        del df  # , df_
+        del df
         self.inf = inf
 
     def __len__(self):
