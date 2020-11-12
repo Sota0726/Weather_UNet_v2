@@ -1,3 +1,4 @@
 cp/
 runs/
 ./.vscode
+__pycache__/
