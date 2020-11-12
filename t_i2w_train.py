@@ -20,7 +20,7 @@ parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--lmda', type=float, default=None)
 parser.add_argument('--num_epoch', type=int, default=150)
 parser.add_argument('--batch_size', type=int, default=16)
-parser.add_argument('--num_workers', type=int, default=4)
+parser.add_argument('--num_workers', type=int, default=8)
 parser.add_argument('--image_only', action='store_true')
 parser.add_argument('--GD_train_ratio', type=int, default=1)
 parser.add_argument('--sampler', action='store_true')
@@ -251,7 +251,7 @@ class WeatherTransfer(object):
             })
 
         self.image_dict.update({
-            'io/train': torch.cat([images, fake_out, rand_images], dim=3),
+            'io/train': torch.cat([images, fake_out.detach(), rand_images], dim=3),
             })
 
     def update_discriminator(self, images, r_labels, labels=None):
@@ -348,7 +348,7 @@ class WeatherTransfer(object):
 
         # train setting
         eval_per_step = 1000
-        display_per_step = 1
+        display_per_step = 1000
         save_per_epoch = 5
 
         self.all_step = args.num_epoch * len(self.train_set) // self.batch_size
