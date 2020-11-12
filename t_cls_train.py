@@ -4,15 +4,13 @@ import os
 parser = argparse.ArgumentParser()
 parser.add_argument('--image_root', type=str,
                     default="/mnt/HDD8T/takamuro/dataset/photos_usa_2016/"
-                    # default='/mnt/fs2/2018/matsuzaki/dataset_fromnitta/Image/'
                     )
 parser.add_argument('--name', type=str, default='cUNet')
 # Nmaing rule : cUNet_[c(classifier) or e(estimator)]_[detail of condition]_[epoch]_[step]
 parser.add_argument('--gpu', type=str, default='1')
 parser.add_argument('--save_dir', type=str, default='cp/transfer')
 parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/from_nitta/param03/temp_WoGray_for_transfer-esttrain214938_test500.pkl'
-                    # default='/mnt/fs2/2019/Takamuro/db/i2w/sepalated_data.pkl'
+                    default='/mnt/fs2/2019/Takamuro/db/i2w/sepalated_data.pkl'
                     )
 parser.add_argument('--estimator_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/classifier/i2w_classifier-res101-train-2020317/better_resnet101_epoch15_step59312.pt'
@@ -26,11 +24,10 @@ parser.add_argument('--num_workers', type=int, default=4)
 parser.add_argument('--image_only', action='store_true')
 parser.add_argument('--GD_train_ratio', type=int, default=1)
 parser.add_argument('--sampler', action='store_true')
-parser.add_argument('--supervised', action='store_true')
 parser.add_argument('--augmentation', action='store_true')
-parser.add_argument('--dataset', type=str, default='i2w')  # i2w or flicker
 parser.add_argument('--loss_lamda_cw', '-lm', type=float, nargs=2, default=[1, 1])
-
+parser.add_argument('-b1', '--adam_beta1', type=float, default=0.0)
+parser.add_argument('-b2', '--adam_beta2', type=float, default=0.999)
 args = parser.parse_args()
 # args = parser.parse_args(args=['--gpu', '1', '--augmentation', '--dataset', 'flicker', '--name', 'debug'])
 
@@ -55,10 +52,11 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import save_image, make_grid
 
 from ops import *
-from dataset import ImageLoader, FlickrDataLoader, ClassImageLoader
+from dataset import ImageLoader, FlickrDataLoader
 from sampler import ImbalancedDatasetSampler
 from cunet import Conditional_UNet
 from disc import SNDisc
+from disc import SNResNet64ProjectionDiscriminator
 from utils import MakeOneHot
 
 
@@ -70,8 +68,8 @@ class WeatherTransfer(object):
         self.batch_size = args.batch_size
         self.global_step = 0
 
-        self.name = '{}_supervised-{}_aug-{}_sampler-{}_dataset-{}_loss_lamda-c{}-w{}'.format(self.args.name, self.args.supervised,
-                    self.args.augmentation, self.args.sampler, self.args.dataset, self.args.loss_lamda_cw[0], self.args.loss_lamda_cw[1])
+        self.name = 'Flickr_{}_aug-{}_sampler-{}_loss_lamda-c{}-w{}_b1-{}_b2-{}'.format(self.args.name, self.args.augmentation, self.args.sampler, self.args.loss_lamda_cw[0],
+                                                                                        self.args.loss_lamda_cw[1], self.args.adam_beta1, self.args.adam_beta2)
         os.makedirs(os.path.join(args.save_dir, self.name), exist_ok=True)
         comment = '_lr-{}_bs-{}_ne-{}_name-{}'.format(args.lr, args.batch_size, args.num_epoch, self.name)
         self.writer = SummaryWriter(comment=comment)
@@ -82,7 +80,7 @@ class WeatherTransfer(object):
         self.lmda = 0.
 
         if args.augmentation:
-            train_transform = transforms.Compose([
+            train_transform = nn.Sequential(
                 transforms.RandomRotation(10),
                 transforms.RandomResizedCrop(args.input_size),
                 transforms.RandomHorizontalFlip(),
@@ -92,28 +90,24 @@ class WeatherTransfer(object):
                         saturation=0.3,
                         hue=0
                     ),
-                transforms.ToTensor(),
+                transforms.ConvertImageDtype(torch.float32),
                 transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-            ])
+            )
         else:
-            train_transform = transforms.Compose([
-                transforms.Resize((args.input_size,) * 2),
-                transforms.ToTensor(),
+            train_transform = nn.Sequential(
+                # transforms.Resize((args.input_size,)*2),
+                transforms.ConvertImageDtype(torch.float32),
                 transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-            ])
+            )
 
-        test_transform = transforms.Compose([
-            transforms.Resize((args.input_size,) * 2),
-            transforms.ToTensor(),
+        test_transform = nn.Sequential(
+            # transforms.Resize((args.input_size,)*2),
+            transforms.ConvertImageDtype(torch.float32),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        ])
+        )
 
-        if args.dataset == 'i2w':
-            self.cols = ['sunny', 'cloudy', 'rain', 'snow', 'foggy']
-            self.num_classes = len(self.cols)
-        elif args.dataset == 'flicker':
-            self.cols = ['clouds', 'temp', 'humidity', 'pressure', 'windspeed']
-            self.num_classes = len(['sunny', 'cloudy', 'rain', 'snow', 'foggy'])
+        self.cols = ['clouds', 'temp', 'humidity', 'pressure', 'windspeed']
+        self.num_classes = len(['sunny', 'cloudy', 'rain', 'snow', 'foggy'])
 
         self.transform = {'train': train_transform, 'test': test_transform}
         self.train_set, self.test_set = self.load_data(varbose=True, image_only=args.image_only)
@@ -121,21 +115,18 @@ class WeatherTransfer(object):
         self.build()
 
     def load_data(self, varbose=False, image_only=False, train_data_rate=0.7):
-
+        args = self.args
         print('Start loading image files...')
-        if args.dataset == 'i2w':
-            sep_data = pd.read_pickle(args.pkl_path)
-            loader = lambda s: ClassImageLoader(paths=sep_data[s], transform=self.transform[s])
 
-        elif args.dataset == 'flicker':
+        if not image_only:
             df = pd.read_pickle(args.pkl_path)
             print('loaded {} data'.format(len(df)))
             df_shuffle = df.sample(frac=1)
-            df_sep = {'train': df_shuffle[df_shuffle['mode'] == 'train'], 'test': df_shuffle[df_shuffle['mode'] == 'test']}
+            df_sep = {'train': df_shuffle[df_shuffle['mode'] == 't_train'], 'test': df_shuffle[df_shuffle['mode'] == 'test']}
             del df, df_shuffle
             loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], self.cols, transform=self.transform[s], class_id=True, imbalance=args.sampler)
 
-        elif image_only:
+        else:
             print('image loader')
             paths = glob(os.path.join(args.image_root, '*'))
             print('loaded {} data'.format(len(paths)))
@@ -154,7 +145,8 @@ class WeatherTransfer(object):
         # Models
         print('Build Models...')
         self.inference = Conditional_UNet(num_classes=self.num_classes)
-        self.discriminator = SNDisc(num_classes=self.num_classes)
+        self.discriminator = SNResNet64ProjectionDiscriminator(num_classes=self.num_classes)
+
         exist_cp = sorted(glob(os.path.join(args.save_dir, self.name, '*')))
         if len(exist_cp) != 0:
             print('Load checkpoint:{}'.format(exist_cp[-1]))
@@ -176,8 +168,8 @@ class WeatherTransfer(object):
         [i.to('cuda') for i in [self.inference, self.discriminator, self.estimator]]
 
         # Optimizer
-        self.g_opt = torch.optim.Adam(self.inference.parameters(), lr=args.lr, betas=(0.9, 0.999), weight_decay=args.lr/20)
-        self.d_opt = torch.optim.Adam(self.discriminator.parameters(), lr=args.lr, betas=(0.9, 0.999), weight_decay=args.lr/20)
+        self.g_opt = torch.optim.Adam(self.inference.parameters(), lr=args.lr, betas=(args.adam_beta1, args.adam_beta2), weight_decay=args.lr/20)
+        self.d_opt = torch.optim.Adam(self.discriminator.parameters(), lr=args.lr, betas=(args.adam_beta1, args.adam_beta2), weight_decay=args.lr/20)
 
         #
         self.train_loader = torch.utils.data.DataLoader(
@@ -218,7 +210,7 @@ class WeatherTransfer(object):
         self.shift_lmda = lambda a, b: (1. - self.lmda) * a + self.lmda * b
         print('Build has been completed.')
 
-    def update_inference(self, images, r_labels, labels=None):
+    def update_inference(self, images, r_labels, rand_images, labels=None):
         # r_labels, labels are one-hot vector
 
         # --- UPDATE(Inference) --- #
@@ -227,20 +219,17 @@ class WeatherTransfer(object):
         # r_labels is one hot, target_label is label(0~4)
         target_label = torch.argmax(r_labels, dim=1)
         # for real
-        if args.supervised:
-            pred_labels = labels
-            ep = 1e-2
-        else:
-            pred_labels = self.estimator(images).detach()
-            # --- master --- #
-            pred_labels = F.softmax(pred_labels, dim=1)
-            ep = 1e-7
-            # -------------- #
-            # --- experiment1 --- #
-            # one-hot
-            # pred_labels = torch.eye(self.num_classes)[torch.argmax(pred_labels, dim=1)].to('cuda')
-            # ep = 1e-2
-            # ------------------- #
+
+        pred_labels = self.estimator(images).detach()
+        # --- master --- #
+        pred_labels = F.softmax(pred_labels, dim=1)
+        ep = 1e-7
+        # -------------- #
+        # --- experiment1 --- #
+        # one-hot
+        # pred_labels = torch.eye(self.num_classes)[torch.argmax(pred_labels, dim=1)].to('cuda')
+        # ep = 1e-2
+        # ------------------- #
 
         fake_out = self.inference(images, r_labels)
         fake_res = self.discriminator(fake_out, r_labels)
@@ -277,7 +266,7 @@ class WeatherTransfer(object):
             })
 
         self.image_dict.update({
-            'io/train': torch.cat([images, fake_out], dim=3),
+            'io/train': torch.cat([images, fake_out, rand_images], dim=3),
             })
 
     def update_discriminator(self, images, r_labels, labels=None):
@@ -286,17 +275,14 @@ class WeatherTransfer(object):
         self.d_opt.zero_grad()
 
         # for real
-        if args.supervised:
-            pred_labels = labels
-        else:
-            pred_labels = self.estimator(images).detach()
-            # --- master --- #
-            pred_labels = F.softmax(pred_labels, dim=1)
-            # -------------- #
-            # --- experiment1 --- #
-            # one-hot
-            # pred_labels = torch.eye(self.num_classes)[torch.argmax(pred_labels, dim=1)].to('cuda')
-            # ------------------- #
+        pred_labels = self.estimator(images).detach()
+        # --- master --- #
+        pred_labels = F.softmax(pred_labels, dim=1)
+        # -------------- #
+        # --- experiment1 --- #
+        # one-hot
+        # pred_labels = torch.eye(self.num_classes)[torch.argmax(pred_labels, dim=1)].to('cuda')
+        # ------------------- #
 
         real_d_out_pred = self.discriminator(images, pred_labels)[0]
 
@@ -325,6 +311,9 @@ class WeatherTransfer(object):
 
         blank = torch.zeros_like(images[0]).unsqueeze(0)
         ref_images, ref_labels = self.test_random_sample[1]
+
+        images = self.test_set.transform(images)
+        ref_images = self.test_set.transform(ref_images)
 
         labels = F.one_hot(labels, self.num_classes).float()
         ref_labels = F.one_hot(ref_labels, self.num_classes).float()
@@ -383,7 +372,8 @@ class WeatherTransfer(object):
         args = self.args
 
         # train setting
-        eval_per_step = 1000
+        # eval_per_step = 1000
+        eval_per_step = 1
         display_per_step = 1000
         save_per_epoch = 5
 
@@ -416,31 +406,30 @@ class WeatherTransfer(object):
                 images, con = (d.to('cuda') for d in data)
                 rand_images, r_con = (d.to('cuda') for d in rand_data)
 
+                images = self.train_set.transform(images)
+                rand_images = self.train_set.transform(rand_images)
+
                 if images.size(0) != self.batch_size:
                     continue
 
                 # --- LABEL PREPROCESS --- #
-                if args.supervised:
-                    rand_labels = torch.eye(self.num_classes)[r_con].to('cuda')  # rand_labels:one_hot, r_con:label[0~4]
-                    labels = torch.eye(self.num_classes)[con].to('cuda')  # labels:one_hot, con:label[0~4]
-                else:
-                    rand_labels = self.estimator(rand_images).detach()
-                    # --- master --- #
-                    # rand_labels = F.softmax(rand_labels, dim=1)
-                    # -------------- #
-                    # --- experiment1 --- #
-                    # one-hot
-                    # rand_labels = torch.eye(self.num_classes)[torch.argmax(rand_labels, dim=1)].to('cuda')
-                    # ------------------- #
-                    # --- experiment2 --- #
-                    rand_labels = torch.eye(self.num_classes)[r_con].to('cuda')  # rand_labels:one_hot, r_con:label[0~4]
-                    # ------------------- #
-                    labels = torch.eye(self.num_classes)[con].to('cuda')
+                rand_labels = self.estimator(rand_images).detach()
+                # --- master --- #
+                # rand_labels = F.softmax(rand_labels, dim=1)
+                # -------------- #
+                # --- experiment1 --- #
+                # one-hot
+                # rand_labels = torch.eye(self.num_classes)[torch.argmax(rand_labels, dim=1)].to('cuda')
+                # ------------------- #
+                # --- experiment2 --- #
+                rand_labels = torch.eye(self.num_classes)[r_con].to('cuda')  # rand_labels:one_hot, r_con:label[0~4]
+                # ------------------- #
+                labels = torch.eye(self.num_classes)[con].to('cuda')
 
                 # --- TRAINING --- #
                 self.update_discriminator(images, rand_labels, labels)
                 if self.global_step % args.GD_train_ratio == 0:
-                    self.update_inference(images, rand_labels, labels)
+                    self.update_inference(images, rand_labels, rand_images, labels=labels)
 
                 # --- EVALUATION ---#
                 if (self.global_step % eval_per_step == 0) and not args.image_only:
