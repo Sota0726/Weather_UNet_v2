@@ -348,7 +348,7 @@ class WeatherTransfer(object):
 
         # train setting
         eval_per_step = 1000
-        display_per_step = 1000
+        display_per_step = 1
         save_per_epoch = 5
 
         self.all_step = args.num_epoch * len(self.train_set) // self.batch_size
@@ -390,7 +390,7 @@ class WeatherTransfer(object):
                 # --- TRAINING --- #
                 self.update_discriminator(images, rand_labels, labels)
                 if self.global_step % args.GD_train_ratio == 0:
-                    self.update_inference(images, rand_labels, rand_images, labels=labels)
+                    self.update_inference(images, rand_labels, rand_images=rand_images, labels=labels)
 
                 # --- EVALUATION ---#
                 if (self.global_step % eval_per_step == 0) and not args.image_only:

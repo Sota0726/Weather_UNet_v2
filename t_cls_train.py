@@ -3,14 +3,14 @@ import os
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--image_root', type=str,
-                    default="/mnt/HDD8T/takamuro/dataset/photos_usa_2016/"
+                    default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017'
                     )
 parser.add_argument('--name', type=str, default='cUNet')
 # Nmaing rule : cUNet_[c(classifier) or e(estimator)]_[detail of condition]_[epoch]_[step]
 parser.add_argument('--gpu', type=str, default='1')
 parser.add_argument('--save_dir', type=str, default='cp/transfer')
 parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/db/i2w/sepalated_data.pkl'
+                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_06/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_WO-outlier-gray_duplicate.pkl'
                     )
 parser.add_argument('--estimator_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/classifier/i2w_classifier-res101-train-2020317/better_resnet101_epoch15_step59312.pt'
@@ -18,7 +18,7 @@ parser.add_argument('--estimator_path', type=str,
 parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--lmda', type=float, default=None)
-parser.add_argument('--num_epoch', type=int, default=35)
+parser.add_argument('--num_epoch', type=int, default=150)
 parser.add_argument('--batch_size', type=int, default=16)
 parser.add_argument('--num_workers', type=int, default=4)
 parser.add_argument('--image_only', action='store_true')
@@ -28,8 +28,8 @@ parser.add_argument('--augmentation', action='store_true')
 parser.add_argument('--loss_lamda_cw', '-lm', type=float, nargs=2, default=[1, 1])
 parser.add_argument('-b1', '--adam_beta1', type=float, default=0.0)
 parser.add_argument('-b2', '--adam_beta2', type=float, default=0.999)
-args = parser.parse_args()
-# args = parser.parse_args(args=['--gpu', '1', '--augmentation', '--dataset', 'flicker', '--name', 'debug'])
+# args = parser.parse_args()
+args = parser.parse_args(args=['--gpu', '0', '--augmentation', '--sampler', '--name', 'debug'])
 
 # GPU Setting
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
@@ -106,7 +106,7 @@ class WeatherTransfer(object):
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         )
 
-        self.cols = ['clouds', 'temp', 'humidity', 'pressure', 'windspeed']
+        self.cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'FeelsLikeC', 'DewPointC']
         self.num_classes = len(['sunny', 'cloudy', 'rain', 'snow', 'foggy'])
 
         self.transform = {'train': train_transform, 'test': test_transform}
@@ -202,7 +202,13 @@ class WeatherTransfer(object):
                     drop_last=True,
                     num_workers=args.num_workers)
             test_data_iter = iter(self.test_loader)
-            self.test_random_sample = [tuple(d.to('cuda') for d in test_data_iter.next()) for i in range(2)]
+
+            self.test_random_sample = []
+            for i in range(2):
+                img, label = tuple(d.to('cuda') for d in test_data_iter.next())
+                img = self.test_set.transform(img)
+                self.test_random_sample.append((img, label))
+            # self.test_random_sample = [tuple(d.to('cuda') for d in test_data_iter.next()) for i in range(2)]
             del test_data_iter, self.test_loader
 
         self.scalar_dict = {}
@@ -218,8 +224,8 @@ class WeatherTransfer(object):
 
         # r_labels is one hot, target_label is label(0~4)
         target_label = torch.argmax(r_labels, dim=1)
-        # for real
 
+        # for real
         pred_labels = self.estimator(images).detach()
         # --- master --- #
         pred_labels = F.softmax(pred_labels, dim=1)
@@ -374,7 +380,7 @@ class WeatherTransfer(object):
         # train setting
         # eval_per_step = 1000
         eval_per_step = 1
-        display_per_step = 1000
+        display_per_step = 1
         save_per_epoch = 5
 
         self.all_step = args.num_epoch * len(self.train_set) // self.batch_size
@@ -415,14 +421,14 @@ class WeatherTransfer(object):
                 # --- LABEL PREPROCESS --- #
                 rand_labels = self.estimator(rand_images).detach()
                 # --- master --- #
-                # rand_labels = F.softmax(rand_labels, dim=1)
+                rand_labels = F.softmax(rand_labels, dim=1)
                 # -------------- #
                 # --- experiment1 --- #
                 # one-hot
                 # rand_labels = torch.eye(self.num_classes)[torch.argmax(rand_labels, dim=1)].to('cuda')
                 # ------------------- #
                 # --- experiment2 --- #
-                rand_labels = torch.eye(self.num_classes)[r_con].to('cuda')  # rand_labels:one_hot, r_con:label[0~4]
+                # rand_labels = torch.eye(self.num_classes)[r_con].to('cuda')  # rand_labels:one_hot, r_con:label[0~4]
                 # ------------------- #
                 labels = torch.eye(self.num_classes)[con].to('cuda')
 
