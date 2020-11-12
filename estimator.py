@@ -8,7 +8,7 @@ from tqdm import trange
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--image_root', type=str,
-                    default='/mnt/HDD8T/takamuro/dataset/photos_usa_2016-2017')
+                    default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017')
 parser.add_argument('--pkl_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_06/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_WO-outlier-gray_duplicate.pkl')
 parser.add_argument('--save_path', type=str, default='cp/estimator')
@@ -70,13 +70,13 @@ if args.augmentation:
     )
 else:
     train_transform = nn.Sequential(
-        transforms.Resize((args.input_size,)*2),
+        # transforms.Resize((args.input_size,)*2),
         transforms.ConvertImageDtype(torch.float32),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     )
 
 test_transform = nn.Sequential(
-    transforms.Resize((args.input_size,)*2),
+    # transforms.Resize((args.input_size,)*2),
     transforms.ConvertImageDtype(torch.float32),
     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 )
@@ -217,9 +217,6 @@ for epoch in tqdm_iter:
 
     if epoch % save_per_epoch == 0:
         out_path = os.path.join(save_dir, 'est_resnet101_'+str(epoch)+'_step'+str(global_step)+'.pt')
-        if args.multi:
-            torch.save(model.module.state_dict(), out_path)
-        else:
-            torch.save(model, out_path)
+        torch.save(model, out_path)
 
 print('Done: training')
