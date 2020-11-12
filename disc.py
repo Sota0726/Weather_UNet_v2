@@ -97,7 +97,7 @@ class SNResNetProjectionDiscriminator(nn.Module):
 class SNResNet64ProjectionDiscriminator(nn.Module):
 
     def __init__(self, num_classes, activation=F.relu):
-        super(SNResNetProjectionDiscriminator, self).__init__()
+        super(SNResNet64ProjectionDiscriminator, self).__init__()
         self.num_features = 64
         self.num_classes = num_classes
         self.activation = activation
