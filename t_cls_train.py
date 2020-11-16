@@ -28,7 +28,7 @@ parser.add_argument('--loss_lamda_cw', '-lm', type=float, nargs=2, default=[1, 1
 parser.add_argument('-b1', '--adam_beta1', type=float, default=0.5)
 parser.add_argument('-b2', '--adam_beta2', type=float, default=0.9)
 args = parser.parse_args()
-# args = parser.parse_args(args=['--gpu', '0', '--augmentation', '--name', 'debug'])
+# args = parser.parse_args(args=['--gpu', '0', '--augmentation', '--name', 'debug', '--GD_train_ratio', '1'])
 
 # GPU Setting
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
@@ -197,9 +197,10 @@ class WeatherTransfer(object):
 
             self.test_random_sample = []
             for i in range(2):
-                img, label = tuple(d.to('cuda') for d in test_data_iter.next())
-                img = self.test_set.transform(img)
-                self.test_random_sample.append((img, label))
+                img, label = test_data_iter.next()
+                img = self.test_set.transform(img.to('cuda'))
+                self.test_random_sample.append((img, label.to('cuda')))
+
             # self.test_random_sample = [tuple(d.to('cuda') for d in test_data_iter.next()) for i in range(2)]
             del test_data_iter, self.test_loader
 
@@ -361,10 +362,20 @@ class WeatherTransfer(object):
             spk = k.rsplit('/', 1)
             self.writer.add_scalars(spk[0], {spk[1]: v}, self.global_step)
         for k, v in self.image_dict.items():
-            grid = make_grid(v,
+            if k == 'images/test':
+                grid = make_grid(v,
                     nrow=1,
                     normalize=True, scale_each=True)
-            self.writer.add_image(k, grid, self.global_step)
+                grid_ = make_grid(v,
+                    nrow=1,
+                    normalize=True, scale_each=False)
+                self.writer.add_image(k + '/scale_ecach=True', grid, self.global_step)
+                self.writer.add_image(k + '/scale_ecach=False', grid_, self.global_step)
+            else:
+                grid = make_grid(v,
+                        nrow=1,
+                        normalize=True, scale_each=True)
+                self.writer.add_image(k, grid, self.global_step)
 
     def train(self):
         args = self.args
