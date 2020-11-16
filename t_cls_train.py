@@ -24,10 +24,9 @@ parser.add_argument('--num_workers', type=int, default=8)
 parser.add_argument('--image_only', action='store_true')
 parser.add_argument('--GD_train_ratio', type=int, default=1)
 parser.add_argument('--sampler', action='store_true')
-parser.add_argument('--augmentation', action='store_true')
 parser.add_argument('--loss_lamda_cw', '-lm', type=float, nargs=2, default=[1, 1])
-parser.add_argument('-b1', '--adam_beta1', type=float, default=0.0)
-parser.add_argument('-b2', '--adam_beta2', type=float, default=0.999)
+parser.add_argument('-b1', '--adam_beta1', type=float, default=0.5)
+parser.add_argument('-b2', '--adam_beta2', type=float, default=0.9)
 args = parser.parse_args()
 # args = parser.parse_args(args=['--gpu', '0', '--augmentation', '--name', 'debug'])
 
@@ -68,7 +67,7 @@ class WeatherTransfer(object):
         self.batch_size = args.batch_size
         self.global_step = 0
 
-        self.name = 'Flickr_{}_aug-{}_sampler-{}_loss_lamda-c{}-w{}_b1-{}_b2-{}'.format(self.args.name, self.args.augmentation, self.args.sampler, self.args.loss_lamda_cw[0],
+        self.name = 'Flickr_{}_sampler-{}_loss_lamda-c{}-w{}_b1-{}_b2-{}'.format(self.args.name, self.args.sampler, self.args.loss_lamda_cw[0],
                                                                                         self.args.loss_lamda_cw[1], self.args.adam_beta1, self.args.adam_beta2)
         os.makedirs(os.path.join(args.save_dir, self.name), exist_ok=True)
         comment = '_lr-{}_bs-{}_ne-{}_name-{}'.format(args.lr, args.batch_size, args.num_epoch, self.name)
@@ -79,26 +78,19 @@ class WeatherTransfer(object):
         self.fake = Variable_Float(0., self.batch_size)
         self.lmda = 0.
 
-        if args.augmentation:
-            train_transform = nn.Sequential(
-                transforms.RandomRotation(10),
-                transforms.RandomResizedCrop(args.input_size),
-                transforms.RandomHorizontalFlip(),
-                transforms.ColorJitter(
-                        brightness=0.5,
-                        contrast=0.3,
-                        saturation=0.3,
-                        hue=0
-                    ),
-                transforms.ConvertImageDtype(torch.float32),
-                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-            )
-        else:
-            train_transform = nn.Sequential(
-                # transforms.Resize((args.input_size,)*2),
-                transforms.ConvertImageDtype(torch.float32),
-                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-            )
+        train_transform = nn.Sequential(
+            transforms.RandomRotation(10),
+            transforms.RandomResizedCrop(args.input_size),
+            transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(
+                    brightness=0.5,
+                    contrast=0.3,
+                    saturation=0.3,
+                    hue=0
+                ),
+            transforms.ConvertImageDtype(torch.float32),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        )
 
         test_transform = nn.Sequential(
             # transforms.Resize((args.input_size,)*2),
@@ -379,8 +371,8 @@ class WeatherTransfer(object):
 
         # train setting
         # eval_per_step = 1000
-        eval_per_step = 1
-        display_per_step = 1
+        eval_per_step = 1000
+        display_per_step = 1000
         save_per_epoch = 5
 
         self.all_step = args.num_epoch * len(self.train_set) // self.batch_size
