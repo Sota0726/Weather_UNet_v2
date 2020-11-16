@@ -146,14 +146,13 @@ if __name__ == '__main__':
     # load model
     estimator = torch.load(args.estimator_path)
     estimator.eval()
-    estimator.cuda()
+    estimator.to('cuda')
 
     bs = args.batch_size
 
     l1_li = np.empty((0, len(cols)))
     pred_li = np.empty((0, len(cols)))
     mse_li = np.empty((0, len(cols)))
-
 
     font = ImageFont.truetype("meiryo.ttc", 11)
     # vec_li = []
@@ -181,8 +180,8 @@ if __name__ == '__main__':
             mse_li = np.append(mse_li, mse.cpu().numpy().reshape(bs, -1), axis=0)
 
         for i in range(bs):
-            signal = signals[i]
-            pred = preds[i]
+            signal = signals[i].to('cpu')
+            pred = preds[i].to('cpu')
 
             gt_img = Image.new('RGB', (args.input_size,)*2, (0, 0, 0))
             pred_img = Image.new('RGB', (args.input_size,)*2, (0, 0, 0))
@@ -193,8 +192,11 @@ if __name__ == '__main__':
             draw_pred.text((0, 0), 'pred signal', font=font, fill=(200, 200, 200))
 
             for j in range(num_classes):
-                gt_text = '{} = {}'.format(cols[j], signal[j].item())
-                pred_text = '{} = {}'.format(cols[j], pred[j].item())
+                signal_ = signal[j] * df_std[j] + df_mean[j]
+                pred_ = pred[j] * df_std[j] + df_mean[j]
+
+                gt_text = '{} = {}'.format(cols[j], signal_)
+                pred_text = '{} = {}'.format(cols[j], pred_)
 
                 j_ = j + 1
                 draw_gt.text((0, j_ * 14), gt_text, font=font, fill=(200, 200, 200))
