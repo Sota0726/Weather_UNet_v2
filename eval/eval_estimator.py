@@ -74,12 +74,16 @@ def make_matricx_img(df, pred, col):
     return dst
 
 
-def plot_hist(col, df, l1, pred):
-    gt = df[col].tolist()
+def plot_hist(col, df, l1, pred, df_std, df_mean):
+    # gt = df[col].tolist()
+    gt = df[col].values
+    gt = gt * df_std[col] + df_mean[col]
+    pred = pred * df_std[col] + df_mean[col]
+    l1 = l1 * df_std[col] + df_mean[col]
 
     fig = plt.figure(figsize=(20, 10))
     ax = fig.add_subplot(1, 3, 1)
-    ax.hist(gt)
+    ax.hist(gt, bins=100)
     ax.set_xlabel('{}_gt'.format(col))
 
     ax = fig.add_subplot(1, 3, 2)
@@ -87,7 +91,7 @@ def plot_hist(col, df, l1, pred):
     ax.set_xlabel('{}_pred'.format(col))
 
     ax = fig.add_subplot(1, 3, 3)
-    ax.hist(l1)
+    ax.hist(l1, bins=100)
     ax.set_xlabel('{}_l1'.format(col))
 
     fig.savefig(os.path.join(save_path, '{}_eval_result.jpg'.format(col)))
@@ -114,7 +118,8 @@ if __name__ == '__main__':
     df.loc[:, cols] = (df.loc[:, cols] - df_mean) / df_std
     del df_
 
-    df = df[df['mode'] == 'test']
+    df = df[df['mode'] == 'train']
+    # df = df[df['mode'] == 'train']
 
     for col in cols:
         tab_img = make_matricx_img(df, df[col].tolist(), col)
@@ -179,9 +184,9 @@ if __name__ == '__main__':
             l1_li = np.append(l1_li, l1.cpu().numpy().reshape(bs, -1), axis=0)
             mse_li = np.append(mse_li, mse.cpu().numpy().reshape(bs, -1), axis=0)
 
-        for i in range(bs):
-            signal = signals[i].to('cpu')
-            pred = preds[i].to('cpu')
+        for j in range(bs):
+            signal = signals[j].to('cpu')
+            pred = preds[j].to('cpu')
 
             gt_img = Image.new('RGB', (args.input_size,)*2, (0, 0, 0))
             pred_img = Image.new('RGB', (args.input_size,)*2, (0, 0, 0))
@@ -191,22 +196,21 @@ if __name__ == '__main__':
             draw_gt.text((0, 0), 'gt signal', font=font, fill=(200, 200, 200))
             draw_pred.text((0, 0), 'pred signal', font=font, fill=(200, 200, 200))
 
-            for j in range(num_classes):
-                signal_ = signal[j] * df_std[j] + df_mean[j]
-                pred_ = pred[j] * df_std[j] + df_mean[j]
+            for k in range(num_classes):
+                signal_ = signal[k] * df_std[k] + df_mean[k]
+                pred_ = pred[k] * df_std[k] + df_mean[k]
+                gt_text = '{} = {}'.format(cols[k], signal_)
+                pred_text = '{} = {}'.format(cols[k], pred_)
 
-                gt_text = '{} = {}'.format(cols[j], signal_)
-                pred_text = '{} = {}'.format(cols[j], pred_)
-
-                j_ = j + 1
-                draw_gt.text((0, j_ * 14), gt_text, font=font, fill=(200, 200, 200))
-                draw_pred.text((0, j_ * 14), pred_text, font=font, fill=(200, 200, 200))
+                k_ = k + 1
+                draw_gt.text((0, k_ * 14), gt_text, font=font, fill=(200, 200, 200))
+                draw_pred.text((0, k_ * 14), pred_text, font=font, fill=(200, 200, 200))
 
             t_gt_img = transform_(gt_img)
             t_pred_img = transform_(pred_img)
-            output = torch.cat([batch[i], t_gt_img, t_pred_img], dim=2)
+            output = torch.cat([batch[j], t_gt_img, t_pred_img], dim=2)
 
-            fp = os.path.join(save_path, 'input_imgs', photo_ids[i] + '.jpg')
+            fp = os.path.join(save_path, 'input_imgs', photo_ids[j] + '.jpg')
             save_image(output, fp=fp, normalize=True)
 
     ave_l1 = np.mean(l1_li, axis=0)
@@ -240,4 +244,4 @@ if __name__ == '__main__':
         for i, col in enumerate(cols):
             tab_img = make_matricx_img(df, pred_li[:, i], col)
             # tab_img.save(os.path.join(save_path, 'est_{}.jpg'.format(col)))
-            plot_hist(col, df, l1_li[:, i], pred_li[:, i])
+            plot_hist(col, df, l1_li[:, i], pred_li[:, i], df_std, df_mean)
