@@ -362,20 +362,10 @@ class WeatherTransfer(object):
             spk = k.rsplit('/', 1)
             self.writer.add_scalars(spk[0], {spk[1]: v}, self.global_step)
         for k, v in self.image_dict.items():
-            if k == 'images/test':
-                grid = make_grid(v,
+            grid = make_grid(v,
                     nrow=1,
                     normalize=True, scale_each=True)
-                grid_ = make_grid(v,
-                    nrow=1,
-                    normalize=True, scale_each=False)
-                self.writer.add_image(k + '/scale_ecach=True', grid, self.global_step)
-                self.writer.add_image(k + '/scale_ecach=False', grid_, self.global_step)
-            else:
-                grid = make_grid(v,
-                        nrow=1,
-                        normalize=True, scale_each=True)
-                self.writer.add_image(k, grid, self.global_step)
+            self.writer.add_image(k, grid, self.global_step)
 
     def train(self):
         args = self.args

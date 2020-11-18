@@ -108,7 +108,7 @@ class WeatherTransfer(object):
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         ])
 
-        self.cols = ['clouds', 'temp', 'humidity', 'pressure', 'windspeed']
+        self.cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'FeelsLikeC', 'DewPointC']
         self.num_classes = len(self.cols)
 
         self.transform = {'train': train_transform, 'test': test_transform}
