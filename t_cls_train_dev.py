@@ -27,8 +27,9 @@ parser.add_argument('--sampler', action='store_true')
 parser.add_argument('--loss_lamda_cw', '-lm', type=float, nargs=2, default=[1, 1])
 parser.add_argument('-b1', '--adam_beta1', type=float, default=0.5)
 parser.add_argument('-b2', '--adam_beta2', type=float, default=0.9)
-args = parser.parse_args()
-# args = parser.parse_args(args=['--gpu', '0', '--augmentation', '--name', 'debug'])
+# args = parser.parse_args()
+args = parser.parse_args(args=['--gpu', '0', '--sampler', '--name', 'cUNet_w-c_res101-0317_RamCom_sampler', 
+                                '--estimator_path', '/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/classifier/cls_res101_i2w_sep-val_aug_20200408/resnet101_epoch15_step59312.pt'])
 
 # GPU Setting
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
@@ -399,16 +400,16 @@ class WeatherTransfer(object):
                     continue
 
                 # --- LABEL PREPROCESS --- #
-                rand_labels = self.estimator(rand_images).detach()
+                # rand_labels = self.estimator(rand_images).detach()
                 # --- master --- #
-                rand_labels = F.softmax(rand_labels, dim=1)
+                # rand_labels = F.softmax(rand_labels, dim=1)
                 # -------------- #
                 # --- experiment1 --- #
                 # one-hot
                 # rand_labels = torch.eye(self.num_classes)[torch.argmax(rand_labels, dim=1)].to('cuda')
                 # ------------------- #
                 # --- experiment2 --- #
-                # rand_labels = torch.eye(self.num_classes)[r_con].to('cuda')  # rand_labels:one_hot, r_con:label[0~4]
+                rand_labels = torch.eye(self.num_classes)[r_con].to('cuda')  # rand_labels:one_hot, r_con:label[0~4]
                 # ------------------- #
                 labels = torch.eye(self.num_classes)[con].to('cuda')
 
