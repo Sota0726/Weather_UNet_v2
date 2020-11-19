@@ -14,7 +14,7 @@ parser.add_argument('--gpu', type=str, default='2')
 parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--num_epoch', type=int, default=100)
-parser.add_argument('--batch_size', type=int, default=16)
+parser.add_argument('--batch_size', type=int, default=64)
 parser.add_argument('--mode', type=str, default='T')
 parser.add_argument('--pre_trained', action='store_true')
 args = parser.parse_args()
@@ -122,6 +122,7 @@ if __name__ == '__main__':
     for epoch in tqdm_iter:
 
         for i, data in enumerate(train_loader, start=0):
+            tqdm_iter.set_description('Training [ {} step ]'.format(global_step))
             inputs, labels = (d.to('cuda') for d in data)
             opt.zero_grad()
 

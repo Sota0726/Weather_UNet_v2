@@ -1,0 +1,21 @@
+FROM nvcr.io/nvidia/pytorch:20.03-py3
+
+RUN apt update && apt install -y sudo git
+RUN apt install -y software-properties-common
+RUN apt install -y libsm6 libxext6 libxrender-dev
+RUN apt install -y libpng-dev libfreetype6-dev
+RUN apt-get install -y libgl1-mesa-dev
+RUN apt install -y tmux wget curl zip
+
+RUN pip install -U pip
+RUN pip install pandas tqdm flake8
+RUN pip install seaborn scikit-learn
+RUN pip install shape-commentator future
+RUN pip install jupyter 
+RUN pip install opencv-python
+
+RUN mkdir /mnt/fs2
+RUN mkdir /mnt/HDD8T
+
+WORKDIR /home/sota/data/m2/
+
