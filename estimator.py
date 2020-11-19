@@ -115,7 +115,7 @@ if __name__ == '__main__':
     else:
         raise NotImplementedError
 
-    del df, df_, temp, temp_
+    del df, df_
     print('{} train data were loaded'.format(len(df_sep['train'])))
 
     loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s],
