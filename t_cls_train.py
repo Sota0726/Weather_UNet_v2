@@ -22,13 +22,15 @@ parser.add_argument('--num_epoch', type=int, default=150)
 parser.add_argument('--batch_size', type=int, default=16)
 parser.add_argument('--num_workers', type=int, default=8)
 parser.add_argument('--image_only', action='store_true')
-parser.add_argument('--GD_train_ratio', type=int, default=1)
+parser.add_argument('--GD_train_ratio', type=int, default=8)
 parser.add_argument('--sampler', action='store_true')
 parser.add_argument('--loss_lamda_cw', '-lm', type=float, nargs=2, default=[1, 1])
 parser.add_argument('-b1', '--adam_beta1', type=float, default=0.5)
 parser.add_argument('-b2', '--adam_beta2', type=float, default=0.9)
+parser.add_argument('--amp', action='store_true')
 args = parser.parse_args()
-# args = parser.parse_args(args=['--gpu', '0', '--augmentation', '--name', 'debug', '--GD_train_ratio', '1'])
+# args = parser.parse_args(args=['--gpu', '0', '--sampler', '--name', 'cUNet_w-c_res101-0317_RamCom_sampler', 
+#                                  '--estimator_path', '/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/classifier/cls_res101_i2w_sep-val_aug_20200408/resnet101_epoch25_step96382.pt'])
 
 # GPU Setting
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
@@ -50,11 +52,12 @@ from torch.utils.data import Dataset
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import save_image, make_grid
 
+from apex import amp, optimizers
+
 from ops import *
 from dataset import ImageLoader, FlickrDataLoader
 from sampler import ImbalancedDatasetSampler
 from cunet import Conditional_UNet
-from disc import SNDisc
 from disc import SNResNet64ProjectionDiscriminator
 from utils import MakeOneHot
 
@@ -78,9 +81,11 @@ class WeatherTransfer(object):
         self.fake = Variable_Float(0., self.batch_size)
         self.lmda = 0.
 
-        train_transform = nn.Sequential(
+        # torch >= 1.7
+        # train_transform = nn.Sequential([
+        train_transform = transforms.Compose([
             transforms.RandomRotation(10),
-            transforms.RandomResizedCrop(args.input_size),
+            # transforms.RandomResizedCrop(args.input_size),
             transforms.RandomHorizontalFlip(),
             transforms.ColorJitter(
                     brightness=0.5,
@@ -88,18 +93,24 @@ class WeatherTransfer(object):
                     saturation=0.3,
                     hue=0
                 ),
-            transforms.ConvertImageDtype(torch.float32),
+            transforms.ToTensor(),
+            # torch >= 1.7
+            # transforms.ConvertImageDtype(torch.float32),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        )
+        ])
 
-        test_transform = nn.Sequential(
-            # transforms.Resize((args.input_size,)*2),
-            transforms.ConvertImageDtype(torch.float32),
+        # torch >= 1.7
+        # test_transform = nn.Sequential([
+        test_transform = transforms.Compose([
+            # transforms.Resize((args.input_size,) * 2),
+            transforms.ToTensor(),
+            # torch >= 1.7
+            # transforms.ConvertImageDtype(torch.float32),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        )
+        ])
 
         self.cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'FeelsLikeC', 'DewPointC']
-        self.num_classes = len(['sunny', 'cloudy', 'rain', 'snow', 'foggy'])
+        self.num_classes = len(['Clear', 'Clouds', 'Rain', 'Snow', 'Mist'])
 
         self.transform = {'train': train_transform, 'test': test_transform}
         self.train_set, self.test_set = self.load_data(varbose=True, image_only=args.image_only)
@@ -116,7 +127,7 @@ class WeatherTransfer(object):
             df_shuffle = df.sample(frac=1)
             df_sep = {'train': df_shuffle[df_shuffle['mode'] == 't_train'], 'test': df_shuffle[df_shuffle['mode'] == 'test']}
             del df, df_shuffle
-            loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], self.cols, transform=self.transform[s], class_id=True, imbalance=args.sampler)
+            loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], self.cols, transform=self.transform[s], class_id=True)
 
         else:
             print('image loader')
@@ -163,6 +174,11 @@ class WeatherTransfer(object):
         self.g_opt = torch.optim.Adam(self.inference.parameters(), lr=args.lr, betas=(args.adam_beta1, args.adam_beta2), weight_decay=args.lr/20)
         self.d_opt = torch.optim.Adam(self.discriminator.parameters(), lr=args.lr, betas=(args.adam_beta1, args.adam_beta2), weight_decay=args.lr/20)
 
+        # apex
+        if args.amp:
+            self.inference, self.g_opt = amp.initialize(self.inference, self.g_opt, opt_level='O1')
+            self.discriminator, self.d_opt = amp.initialize(self.inference, self.d_opt, opt_level='O1')
+
         #
         self.train_loader = torch.utils.data.DataLoader(
                 self.train_set,
@@ -195,13 +211,13 @@ class WeatherTransfer(object):
                     num_workers=args.num_workers)
             test_data_iter = iter(self.test_loader)
 
-            self.test_random_sample = []
-            for i in range(2):
-                img, label = test_data_iter.next()
-                img = self.test_set.transform(img.to('cuda'))
-                self.test_random_sample.append((img, label.to('cuda')))
-
-            # self.test_random_sample = [tuple(d.to('cuda') for d in test_data_iter.next()) for i in range(2)]
+            self.test_random_sample = [tuple(d.to('cuda') for d in test_data_iter.next()) for i in range(2)]
+            # torch >= 1.7
+            # self.test_random_sample = []
+            # for i in range(2):
+            #     img, label = test_data_iter.next()
+            #     img = self.test_set.transform(img.to('cuda'))
+            #     self.test_random_sample.append((img, label.to('cuda')))
             del test_data_iter, self.test_loader
 
         self.scalar_dict = {}
@@ -251,7 +267,11 @@ class WeatherTransfer(object):
 
         g_loss = g_loss_adv + lmda_con * loss_con + lmda_w * g_loss_w
 
-        g_loss.backward()
+        if self.args.amp:
+            with amp.scale_loss(g_loss, self.g_opt) as scale_loss:
+                scale_loss.backward()
+        else:
+            g_loss.backward()
         self.g_opt.step()
 
         self.scalar_dict.update({
@@ -291,7 +311,11 @@ class WeatherTransfer(object):
 
         d_loss = dis_hinge(fake_d_out, real_d_out_pred)
 
-        d_loss.backward()
+        if self.args.amp:
+            with amp.scale_loss(d_loss, self.d_opt) as scale_loss:
+                scale_loss.backward()
+        else:
+            d_loss.backward()
         self.d_opt.step()
 
         self.scalar_dict.update({
@@ -310,9 +334,6 @@ class WeatherTransfer(object):
 
         blank = torch.zeros_like(images[0]).unsqueeze(0)
         ref_images, ref_labels = self.test_random_sample[1]
-
-        images = self.test_set.transform(images)
-        ref_images = self.test_set.transform(ref_images)
 
         labels = F.one_hot(labels, self.num_classes).float()
         ref_labels = F.one_hot(ref_labels, self.num_classes).float()
@@ -372,8 +393,8 @@ class WeatherTransfer(object):
 
         # train setting
         # eval_per_step = 1000
-        eval_per_step = 1000
-        display_per_step = 1000
+        eval_per_step = 1000 * args.GD_train_ratio
+        display_per_step = 1000 * args.GD_train_ratio
         save_per_epoch = 5
 
         self.all_step = args.num_epoch * len(self.train_set) // self.batch_size
@@ -405,23 +426,24 @@ class WeatherTransfer(object):
                 images, con = (d.to('cuda') for d in data)
                 rand_images, r_con = (d.to('cuda') for d in rand_data)
 
-                images = self.train_set.transform(images)
-                rand_images = self.train_set.transform(rand_images)
+                # torch >= 1.7
+                # images = self.train_set.transform(images)
+                # rand_images = self.train_set.transform(rand_images)
 
                 if images.size(0) != self.batch_size:
                     continue
 
                 # --- LABEL PREPROCESS --- #
-                rand_labels = self.estimator(rand_images).detach()
+                # rand_labels = self.estimator(rand_images).detach()
                 # --- master --- #
-                rand_labels = F.softmax(rand_labels, dim=1)
+                # rand_labels = F.softmax(rand_labels, dim=1)
                 # -------------- #
                 # --- experiment1 --- #
                 # one-hot
                 # rand_labels = torch.eye(self.num_classes)[torch.argmax(rand_labels, dim=1)].to('cuda')
                 # ------------------- #
                 # --- experiment2 --- #
-                # rand_labels = torch.eye(self.num_classes)[r_con].to('cuda')  # rand_labels:one_hot, r_con:label[0~4]
+                rand_labels = torch.eye(self.num_classes)[r_con].to('cuda')  # rand_labels:one_hot, r_con:label[0~4]
                 # ------------------- #
                 labels = torch.eye(self.num_classes)[con].to('cuda')
 
