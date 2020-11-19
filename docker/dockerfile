@@ -16,6 +16,8 @@ RUN pip install opencv-python
 
 RUN mkdir /mnt/fs2
 RUN mkdir /mnt/HDD8T
+COPY .tmux.conf /root/
 
 WORKDIR /home/sota/data/m2/
 
+# docker run -v /mnt/HDD8T/takamuro/:/mnt/HDD8T -v /mnt/fs2:/mnt/fs2 -v /mnt/HDD8T/takamuro/m2/Weather_UNet_v2/:/home/sota/data/m2/ --gpus all --name weatherUNetV2 --shm-size 2G -p 6006:6006 -p 6007:6007 -it pytorch15_takamuro bash
