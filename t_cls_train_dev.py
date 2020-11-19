@@ -27,9 +27,10 @@ parser.add_argument('--sampler', action='store_true')
 parser.add_argument('--loss_lamda_cw', '-lm', type=float, nargs=2, default=[1, 1])
 parser.add_argument('-b1', '--adam_beta1', type=float, default=0.5)
 parser.add_argument('-b2', '--adam_beta2', type=float, default=0.9)
-# args = parser.parse_args()
-args = parser.parse_args(args=['--gpu', '0', '--sampler', '--name', 'cUNet_w-c_res101-0317_RamCom_sampler', 
-                                '--estimator_path', '/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/classifier/cls_res101_i2w_sep-val_aug_20200408/resnet101_epoch15_step59312.pt'])
+parser.add_argument('--amp', action='store_true')
+args = parser.parse_args()
+# args = parser.parse_args(args=['--gpu', '0', '--sampler', '--name', 'cUNet_w-c_res101-0317_RamCom_sampler', 
+#                                  '--estimator_path', '/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/classifier/cls_res101_i2w_sep-val_aug_20200408/resnet101_epoch25_step96382.pt'])
 
 # GPU Setting
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
@@ -50,6 +51,8 @@ import torchvision.models as models
 from torch.utils.data import Dataset
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import save_image, make_grid
+
+from apex import amp, optimizers
 
 from ops import *
 from dataset_dev import ImageLoader, FlickrDataLoader
@@ -163,6 +166,11 @@ class WeatherTransfer(object):
         self.g_opt = torch.optim.Adam(self.inference.parameters(), lr=args.lr, betas=(args.adam_beta1, args.adam_beta2), weight_decay=args.lr/20)
         self.d_opt = torch.optim.Adam(self.discriminator.parameters(), lr=args.lr, betas=(args.adam_beta1, args.adam_beta2), weight_decay=args.lr/20)
 
+        # apex
+        if args.amp:
+            self.inference, self.g_opt = amp.initialize(self.inference, self.g_opt, opt_level='O1')
+            self.discriminator, self.d_opt = amp.initialize(self.inference, self.d_opt, opt_level='O1')
+
         #
         self.train_loader = torch.utils.data.DataLoader(
                 self.train_set,
@@ -245,7 +253,11 @@ class WeatherTransfer(object):
 
         g_loss = g_loss_adv + lmda_con * loss_con + lmda_w * g_loss_w
 
-        g_loss.backward()
+        if self.args.amp:
+            with amp.scale_loss(g_loss, self.g_opt) as scale_loss:
+                scale_loss.backward()
+        else:
+            g_loss.backward()
         self.g_opt.step()
 
         self.scalar_dict.update({
@@ -285,7 +297,11 @@ class WeatherTransfer(object):
 
         d_loss = dis_hinge(fake_d_out, real_d_out_pred)
 
-        d_loss.backward()
+        if self.args.amp:
+            with amp.scale_loss(d_loss, self.d_opt) as scale_loss:
+                scale_loss.backward()
+        else:
+            d_loss.backward()
         self.d_opt.step()
 
         self.scalar_dict.update({

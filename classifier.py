@@ -17,6 +17,7 @@ parser.add_argument('--num_epoch', type=int, default=100)
 parser.add_argument('--batch_size', type=int, default=64)
 parser.add_argument('--mode', type=str, default='T')
 parser.add_argument('--pre_trained', action='store_true')
+parser.add_argument('--amp', action='store_true')
 args = parser.parse_args()
 
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
@@ -27,10 +28,12 @@ import torch.nn as nn
 import torchvision.transforms as transforms
 import torchvision.models as models
 
+from apex import amp, optimizers
+
 from torch.utils.tensorboard import SummaryWriter
 
-from dataset import ClassImageLoader
-from sampler import ImbalancedDatasetSampler
+from dataset_dev import ClassImageLoader
+from sampler_dev import ImbalancedDatasetSampler
 
 save_dir = os.path.join(args.save_path, args.name)
 os.makedirs(save_dir, exist_ok=True)
@@ -110,11 +113,13 @@ if __name__ == '__main__':
     eval_per_iter = 500
     display_per_iter = 500
     save_per_epoch = 5
-
     tqdm_iter = trange(args.num_epoch, desc='Training', leave=True)
 
     comment = '_lr-{}_bs-{}_ne-{}_x{}_name-{}'.format(args.lr, args.batch_size, args.num_epoch, args.input_size, args.name)
     writer = SummaryWriter(comment=comment)
+
+    if args.amp:
+        model, opt = amp.initialize(model, opt, opt_level='O1')
 
     loss_li = []
     prec_li = []
@@ -133,7 +138,12 @@ if __name__ == '__main__':
             loss_li.append(loss.item())
             prec_li.append(prec.item())
 
-            loss.backward()
+            if args.amp:
+                with amp.scale_loss(loss, opt) as scale_loss:
+                    scale_loss.backward()
+            else:
+                loss.backward()
+
             opt.step()
 
             if global_step % eval_per_iter == 0:
