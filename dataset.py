@@ -200,3 +200,43 @@ class OneYearWeatherSignals(Dataset):
         sig = self.get_condition(idx)
         s_time = self.s_times[idx]
         return self.image, sig, s_time
+
+
+class TransientAttributes(Dataset):
+    def __init__(self, image_root, df, columns, transform=None):
+        super(TransientAttributes, self).__init__()
+        # init
+        # ['dirty', 'daylight', 'night', 'sunrisesunset', 'dawndusk', 'sunny', 'clouds', 'fog', 'storm', 'snow', 
+        # 'warm', 'cold', 'busy', 'beautiful', 'flowers', 'spring', 'summer', 'autumn', 'winter', 'glowing', 
+        # 'colorful', 'dull', 'rugged', 'midday', 'dark', 'bright', 'dry', 'moist', 'windy', 'rain', 'ice', 'cluttered', 
+        # 'soothing', 'stressful', 'exciting', 'sentimental', 'mysterious', 'boring', 'gloomy', 'lush']
+        self.root = os.path.join(image_root, 'imageLD')
+        self.photos = df['photo'].to_list()
+        self.classes = df.loc[:, columns]
+        self.num_classes = len(columns)
+        self.transform = transform
+        # self.cls_li = ['daylight', 'night', 'sunrisesunset', 'dawndusk', 'midday']
+
+    def get_class(self, idx):
+        w_cls = self.classes.iloc[idx].to_list()
+        w_cls_ = [float(x.split(',')[0]) for x in w_cls]
+        cls_tensor = torch.from_numpy(np.array(w_cls_)).float()
+        del w_cls, w_cls_
+        return cls_tensor
+
+    def __len__(self):
+        return len(self.photos)
+
+    def __getitem__(self, idx):
+        # --- GET IMAGE ---#
+        try:
+            image = Image.open(os.path.join(self.root, self.photos[idx]))
+        except:
+            return self.__getitem__(idx)
+        image = image.convert('RGB')
+        if self.transform:
+            image = self.transform(image)
+
+        labels_tensor = self.get_class(idx)
+
+        return image, labels_tensor
