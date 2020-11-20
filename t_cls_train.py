@@ -7,13 +7,13 @@ parser.add_argument('--image_root', type=str,
                     )
 parser.add_argument('--name', type=str, default='cUNet')
 # Nmaing rule : cUNet_[c(classifier) or e(classifier)]_[detail of condition]_[epoch]_[step]
-parser.add_argument('--gpu', type=str, default='1')
+parser.add_argument('--gpus', type=str, default='1')
 parser.add_argument('--save_dir', type=str, default='cp/transfer')
 parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_06/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_WO-outlier-gray_duplicate.pkl'
+                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_06/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_WO-outlier-gray_duplicate_time6-18.pkl'
                     )
 parser.add_argument('--classifier_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/classifier/i2w_classifier-res101-train-2020317/better_resnet101_epoch15_step59312.pt'
+                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/classifier/cls_res101-1119_I2W-train/resnet101_epoch15_step59312.pt'
                     )
 parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--lr', type=float, default=1e-4)
@@ -28,13 +28,14 @@ parser.add_argument('--loss_lamda_cw', '-lm', type=float, nargs=2, default=[1, 1
 parser.add_argument('-b1', '--adam_beta1', type=float, default=0.5)
 parser.add_argument('-b2', '--adam_beta2', type=float, default=0.9)
 parser.add_argument('--amp', action='store_true')
+parser.add_argument('--multi_gpu', action='store_true')
 args = parser.parse_args()
 # args = parser.parse_args(args=['--gpu', '0', '--sampler', '--name', 'cUNet_w-c_res101-0317_RamCom_sampler', 
 #                                  '--classifier_path', '/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/classifier/cls_res101_i2w_sep-val_aug_20200408/resnet101_epoch25_step96382.pt'])
 
 # GPU Setting
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
-os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
 
 import numpy as np
 import pandas as pd
@@ -68,19 +69,26 @@ class WeatherTransfer(object):
 
         self.args = args
         self.batch_size = args.batch_size
+        if self.batch_size % 16 != 0:
+            print('set batch size multiple of 16')
+            exit()
         self.global_step = 0
 
-        self.name = 'Flickr_{}_sampler-{}_loss_lamda-c{}-w{}_b1-{}_b2-{}_GDratio-{}_amp-{}'.format(self.args.name, self.args.sampler, self.args.loss_lamda_cw[0],
+        self.name = 'Flickr_{}_sampler-{}_loss_lamda-c{}-w{}_b1-{}_b2-{}_GDratio-{}_amp-{}_MGpu-{}'.format(self.args.name, self.args.sampler, self.args.loss_lamda_cw[0],
                                                                                         self.args.loss_lamda_cw[1], self.args.adam_beta1, self.args.adam_beta2,
-                                                                                        self.args.GD_train_ratio, self.args.amp)
+                                                                                        self.args.GD_train_ratio, self.args.amp, self.args.multi_gpu)
+
+        comment = '_lr-{}*{}_bs-{}_ne-{}'.format(str(int((args.batch_size / 16))), self.args.lr, self.args.batch_size, self.args.num_epoch)
+        
+        self.writer = SummaryWriter(comment=comment + '_name-' + self.name)
+        self.name = self.name + comment
         os.makedirs(os.path.join(args.save_dir, self.name), exist_ok=True)
-        comment = '_lr-{}_bs-{}_ne-{}_name-{}'.format(args.lr, args.batch_size, args.num_epoch, self.name)
-        self.writer = SummaryWriter(comment=comment)
 
         # Consts
         self.real = Variable_Float(1., self.batch_size)
         self.fake = Variable_Float(0., self.batch_size)
         self.lmda = 0.
+        self.args.lr = args.lr * int(args.batch_size / 16)
 
         # torch >= 1.7
         # train_transform = nn.Sequential([
@@ -169,19 +177,24 @@ class WeatherTransfer(object):
         self.classifier = torch.load(args.classifier_path)
         self.classifier.eval()
 
-        # Models to CUDA
-        [i.to('cuda') for i in [self.inference, self.discriminator, self.classifier]]
-
         # Optimizer
+        args.lr = args.lr * args.batch_size / 16
         self.g_opt = torch.optim.Adam(self.inference.parameters(), lr=args.lr, betas=(args.adam_beta1, args.adam_beta2), weight_decay=args.lr/20)
         self.d_opt = torch.optim.Adam(self.discriminator.parameters(), lr=args.lr, betas=(args.adam_beta1, args.adam_beta2), weight_decay=args.lr/20)
+
+        # Models to CUDA
+        [i.to('cuda:0') for i in [self.inference, self.discriminator, self.classifier]]
 
         # apex
         if args.amp:
             self.inference, self.g_opt = amp.initialize(self.inference, self.g_opt, opt_level='O1')
-            self.discriminator, self.d_opt = amp.initialize(self.inference, self.d_opt, opt_level='O1')
+            self.discriminator, self.d_opt = amp.initialize(self.discriminator, self.d_opt, opt_level='O1')
 
-        #
+        if args.multi_gpu and torch.cuda.device_count() > 1:
+            self.inference = nn.DataParallel(self.inference)
+            self.discriminator = nn.DataParallel(self.discriminator)
+            self.classifier = nn.DataParallel(self.classifier)
+
         self.train_loader = torch.utils.data.DataLoader(
                 self.train_set,
                 batch_size=args.batch_size,
@@ -213,14 +226,14 @@ class WeatherTransfer(object):
                     num_workers=args.num_workers)
             test_data_iter = iter(self.test_loader)
 
-            self.test_random_sample = [tuple(d.to('cuda') for d in test_data_iter.next()) for i in range(2)]
+            self.test_random_sample = [tuple(d.to('cuda:0') for d in test_data_iter.next()) for i in range(2)]
             # torch >= 1.7
             # self.test_random_sample = []
             # for i in range(2):
             #     img, label = test_data_iter.next()
-            #     img = self.test_set.transform(img.to('cuda'))
-            #     self.test_random_sample.append((img, label.to('cuda')))
-            del test_data_iter self.test_loader
+            #     img = self.test_set.transform(img.to('cuda:0'))
+            #     self.test_random_sample.append((img, label.to('cuda:0')))
+            del test_data_iter, self.test_loader
 
         self.scalar_dict = {}
         self.image_dict = {}
@@ -244,7 +257,7 @@ class WeatherTransfer(object):
         # -------------- #
         # --- experiment1 --- #
         # one-hot
-        # pred_labels = torch.eye(self.num_classes)[torch.argmax(pred_labels, dim=1)].to('cuda')
+        # pred_labels = torch.eye(self.num_classes)[torch.argmax(pred_labels, dim=1)].to('cuda:0')
         # ep = 1e-2
         # ------------------- #
 
@@ -302,7 +315,7 @@ class WeatherTransfer(object):
         # -------------- #
         # --- experiment1 --- #
         # one-hot
-        # pred_labels = torch.eye(self.num_classes)[torch.argmax(pred_labels, dim=1)].to('cuda')
+        # pred_labels = torch.eye(self.num_classes)[torch.argmax(pred_labels, dim=1)].to('cuda:0')
         # ------------------- #
 
         real_d_out_pred = self.discriminator(images, pred_labels)[0]
@@ -410,13 +423,21 @@ class WeatherTransfer(object):
                 self.global_step += 1
 
                 if self.global_step % eval_per_step == 0:
-                    out_path = os.path.join(args.save_dir, self.name, (self.name + '_e{:04d}_s{}.pt').format(self.epoch, self.global_step))
-                    state_dict = {
-                            'inference': self.inference.state_dict(),
-                            'discriminator': self.discriminator.state_dict(),
+                    out_path = os.path.join(args.save_dir, self.name, ('cUNet_cls' + '_e{:04d}_s{}.pt').format(self.epoch, self.global_step))
+                    if args.multi_gpu and torch.cuda.device_count() > 1:
+                        state_dict = {
+                            'inference': self.inference.module.state_dict(),
+                            'discriminator': self.discriminator.module.state_dict(),
                             'epoch': self.epoch,
                             'global_step': self.global_step
                             }
+                    else:
+                        state_dict = {
+                                'inference': self.inference.state_dict(),
+                                'discriminator': self.discriminator.state_dict(),
+                                'epoch': self.epoch,
+                                'global_step': self.global_step
+                                }
                     torch.save(state_dict, out_path)
 
                 tqdm_iter.set_description('Training [ {} step ]'.format(self.global_step))
@@ -425,8 +446,8 @@ class WeatherTransfer(object):
                 else:
                     self.lmda = self.global_step / self.all_step
 
-                images, con = (d.to('cuda') for d in data)
-                rand_images, r_con = (d.to('cuda') for d in rand_data)
+                images, con = (d.to('cuda:0') for d in data)
+                rand_images, r_con = (d.to('cuda:0') for d in rand_data)
 
                 # torch >= 1.7
                 # images = self.train_set.transform(images)
@@ -442,12 +463,12 @@ class WeatherTransfer(object):
                 # -------------- #
                 # --- experiment1 --- #
                 # one-hot
-                # rand_labels = torch.eye(self.num_classes)[torch.argmax(rand_labels, dim=1)].to('cuda')
+                # rand_labels = torch.eye(self.num_classes)[torch.argmax(rand_labels, dim=1)].to('cuda:0')
                 # ------------------- #
                 # --- experiment2 --- #
-                rand_labels = torch.eye(self.num_classes)[r_con].to('cuda')  # rand_labels:one_hot, r_con:label[0~4]
+                rand_labels = torch.eye(self.num_classes)[r_con].to('cuda:0')  # rand_labels:one_hot, r_con:label[0~4]
                 # ------------------- #
-                labels = torch.eye(self.num_classes)[con].to('cuda')
+                labels = torch.eye(self.num_classes)[con].to('cuda:0')
 
                 # --- TRAINING --- #
                 self.update_discriminator(images, rand_labels, labels)
