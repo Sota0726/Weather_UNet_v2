@@ -108,9 +108,10 @@ def plot_hist(col, df, l1, pred, df_std, df_mean):
 
 if __name__ == '__main__':
 
+    mode = 'test'
     save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_estimator',
                              args.estimator_path.split('/')[-2],
-                             'e' + args.estimator_path.split('/')[-1].split('_')[-2])
+                             'e' + args.estimator_path.split('/')[-1].split('_')[-2], mode)
     os.makedirs(save_path, exist_ok=True)
     os.makedirs(os.path.join(save_path, 'input_imgs'), exist_ok=True)
 
@@ -131,7 +132,7 @@ if __name__ == '__main__':
     for col in cols:
         df['pred_{}'.format(col)] = '-99'
     df_col_list = df.columns.to_list()
-    df = df[df['mode'] == 'train']
+    df = df[df['mode'] == mode]
     # df = df[df['mode'] == 'test']
 
     for col in cols:
