@@ -32,7 +32,8 @@ class AdaIN(nn.Module):
         self.emb = nn.Embedding(num_classes, num_classes)
 
     def c_norm(self, x, bs, ch, eps=1e-7):
-        assert isinstance(x, torch.cuda.FloatTensor)
+        # assert isinstance(x, torch.cuda.FloatTensor)
+        assert isinstance(x, torch.cuda.FloatTensor) or isinstance(x, torch.cuda.HalfTensor)
         x_var = x.var(dim=-1) + eps
         x_std = x_var.sqrt().view(bs, ch, 1, 1)
         x_mean = x.mean(dim=-1).view(bs, ch, 1, 1)
