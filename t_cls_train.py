@@ -29,8 +29,9 @@ parser.add_argument('-b1', '--adam_beta1', type=float, default=0.5)
 parser.add_argument('-b2', '--adam_beta2', type=float, default=0.9)
 parser.add_argument('--amp', action='store_true')
 parser.add_argument('--multi_gpu', action='store_true')
+parser.add_argument('--weather_loss', type=str, default='CE')
 args = parser.parse_args()
-# args = parser.parse_args(args=['--gpu', '0', '--sampler', '--name', 'cUNet_w-c_res101-0317_RamCom_sampler', 
+# args = parser.parse_args(args=['--gpu', '3', '--sampler', '--name', 'cUNet_w-c_res101-0317_RamCom_sampler', 
 #                                  '--classifier_path', '/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/classifier/cls_res101_i2w_sep-val_aug_20200408/resnet101_epoch25_step96382.pt'])
 
 # GPU Setting
@@ -40,7 +41,8 @@ os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
 import numpy as np
 import pandas as pd
 from PIL import Image
-from tqdm import trange, tqdm
+from tqdm import trange
+from collections import OrderedDict
 from glob import glob
 
 import torch
@@ -74,12 +76,12 @@ class WeatherTransfer(object):
             exit()
         self.global_step = 0
 
-        self.name = 'Flickr_{}_sampler-{}_loss_lamda-c{}-w{}_b1-{}_b2-{}_GDratio-{}_amp-{}_MGpu-{}'.format(self.args.name, self.args.sampler, self.args.loss_lamda_cw[0],
-                                                                                        self.args.loss_lamda_cw[1], self.args.adam_beta1, self.args.adam_beta2,
+        self.name = 'Flickr_{}_sampler-{}_loss_lamda-c{}-w{}-{}_b1-{}_b2-{}_GDratio-{}_amp-{}_MGpu-{}'.format(self.args.name, self.args.sampler, self.args.loss_lamda_cw[0],
+                                                                                        self.args.loss_lamda_cw[1], self.args.weather_loss, self.args.adam_beta1, self.args.adam_beta2,
                                                                                         self.args.GD_train_ratio, self.args.amp, self.args.multi_gpu)
 
         comment = '_lr-{}*{}_bs-{}_ne-{}'.format(str(int((args.batch_size / 16))), self.args.lr, self.args.batch_size, self.args.num_epoch)
-        
+
         self.writer = SummaryWriter(comment=comment + '_name-' + self.name)
         self.name = self.name + comment
         os.makedirs(os.path.join(args.save_dir, self.name), exist_ok=True)
@@ -241,14 +243,9 @@ class WeatherTransfer(object):
         print('Build has been completed.')
 
     def update_inference(self, images, r_labels, rand_images, labels=None):
-        # r_labels, labels are one-hot vector
-
+        # labels, r_labels is one hot, target_label is label(0~4)
         # --- UPDATE(Inference) --- #
         self.g_opt.zero_grad()
-
-        # r_labels is one hot, target_label is label(0~4)
-        target_label = torch.argmax(r_labels, dim=1)
-
         # for real
         pred_labels = self.classifier(images).detach()
         # --- master --- #
@@ -270,7 +267,7 @@ class WeatherTransfer(object):
         # Calc Generator Loss
         g_loss_adv = gen_hinge(fake_d_out)  # Adversarial loss
         g_loss_l1 = l1_loss(fake_out, images)
-        g_loss_w = pred_loss(fake_c_out, target_label, cls=True)   # Weather prediction
+        g_loss_w = pred_loss(fake_c_out, r_labels, cls=self.args.weather_loss)   # Weather prediction
 
         # abs_loss = torch.mean(torch.abs(fake_out - images), [1, 2, 3])
 
@@ -302,6 +299,8 @@ class WeatherTransfer(object):
         self.image_dict.update({
             'io/train': torch.cat([images, fake_out.detach(), rand_images], dim=3),
             })
+
+        return g_loss_adv.item(), loss_con.item(), g_loss_w.item()
 
     def update_discriminator(self, images, r_labels, labels=None):
 
@@ -336,6 +335,8 @@ class WeatherTransfer(object):
         self.scalar_dict.update({
             'losses/d_loss/train': d_loss.item()
             })
+
+        return d_loss.item()
 
     def evaluation(self):
         g_loss_l1_ = []
@@ -471,9 +472,10 @@ class WeatherTransfer(object):
                 labels = torch.eye(self.num_classes)[con].to('cuda:0')
 
                 # --- TRAINING --- #
-                self.update_discriminator(images, rand_labels, labels)
+                d_loss = self.update_discriminator(images, rand_labels, labels)
                 if self.global_step % args.GD_train_ratio == 0:
-                    self.update_inference(images, rand_labels, rand_images, labels=labels)
+                    g_loss, r_loss, w_loss = self.update_inference(images, rand_labels, rand_images, labels=labels)
+                    tqdm_iter.set_postfix(OrderedDict(d_loss=d_loss, g_loss=g_loss, r_loss=r_loss, w_loss=w_loss))
 
                 # --- EVALUATION ---#
                 if (self.global_step % eval_per_step == 0) and not args.image_only:
