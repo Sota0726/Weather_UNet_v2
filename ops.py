@@ -30,18 +30,15 @@ def feat_loss(a, b):
     return torch.mean(torch.stack([F.l1_loss(a_, b_) for a_,b_ in zip(a, b)]))
 
 
-def pred_loss(preds, labels, cls=None):
+def pred_loss(preds, labels, cls='mse'):
     if cls == 'CE':
         criterion = nn.CrossEntropyLoss()
         # one-hot to 0~4 label
         labels_ = torch.argmax(labels, dim=1)
         loss = criterion(preds, labels_)
-    elif cls == 'mse':
+    else:
         criterion = nn.MSELoss()
         loss = criterion(preds, labels)
-    else:
-        print('set weather loss name')
-        exit()
     return loss
 
 
