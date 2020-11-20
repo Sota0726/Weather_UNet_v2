@@ -110,7 +110,7 @@ if __name__ == '__main__':
 
     save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_estimator',
                              args.estimator_path.split('/')[-2],
-                             'e' + args.estimator_path.split('/')[-1].split('_')[-2])
+                             'e' + args.estimator_path.split('/')[-1].split('_')[-2], 'all')
     os.makedirs(save_path, exist_ok=True)
     os.makedirs(os.path.join(save_path, 'input_imgs'), exist_ok=True)
 
@@ -131,7 +131,7 @@ if __name__ == '__main__':
     for col in cols:
         df['pred_{}'.format(col)] = '-99'
     df_col_list = df.columns.to_list()
-    df = df[df['mode'] == 'train']
+    # df = df[df['mode'] == 'train']
     # df = df[df['mode'] == 'test']
 
     for col in cols:
@@ -171,7 +171,7 @@ if __name__ == '__main__':
     pred_li = np.empty((0, len(cols)))
     mse_li = np.empty((0, len(cols)))
 
-    font = ImageFont.truetype("meiryo.ttc", 11)
+    # font = ImageFont.truetype("meiryo.ttc", 11)
     # vec_li = []
     for i, data in tqdm(enumerate(loader), total=len(df) // bs):
         batch = data[0].to('cuda')
@@ -201,34 +201,34 @@ if __name__ == '__main__':
             signal = signals[j].to('cpu')
             pred = preds[j].to('cpu')
 
-            gt_img = Image.new('RGB', (args.input_size,) * 2, (0, 0, 0))
-            pred_img = Image.new('RGB', (args.input_size,) * 2, (0, 0, 0))
+            # gt_img = Image.new('RGB', (args.input_size,) * 2, (0, 0, 0))
+            # pred_img = Image.new('RGB', (args.input_size,) * 2, (0, 0, 0))
 
-            draw_gt = ImageDraw.Draw(gt_img)
-            draw_pred = ImageDraw.Draw(pred_img)
-            draw_gt.text((0, 0), 'gt signal', font=font, fill=(200, 200, 200))
-            draw_pred.text((0, 0), 'pred signal', font=font, fill=(200, 200, 200))
+            # draw_gt = ImageDraw.Draw(gt_img)
+            # draw_pred = ImageDraw.Draw(pred_img)
+            # draw_gt.text((0, 0), 'gt signal', font=font, fill=(200, 200, 200))
+            # draw_pred.text((0, 0), 'pred signal', font=font, fill=(200, 200, 200))
 
-            # ind_df = df[df.photo == photo_ids[j]].index[0]
+            ind_df = df[df.photo == photo_ids[j]].index[0]
 
             for k in range(num_classes):
                 signal_ = signal[k].item() * df_std[k] + df_mean[k]
                 pred_ = pred[k].item() * df_std[k] + df_mean[k]
-                gt_text = '{} = {}'.format(cols[k], signal_)
-                pred_text = '{} = {}'.format(cols[k], pred_)
+                # gt_text = '{} = {}'.format(cols[k], signal_)
+                # pred_text = '{} = {}'.format(cols[k], pred_)
 
-                k_ = k + 1
-                draw_gt.text((0, k_ * 14), gt_text, font=font, fill=(200, 200, 200))
-                draw_pred.text((0, k_ * 14), pred_text, font=font, fill=(200, 200, 200))
+                # k_ = k + 1
+                # draw_gt.text((0, k_ * 14), gt_text, font=font, fill=(200, 200, 200))
+                # draw_pred.text((0, k_ * 14), pred_text, font=font, fill=(200, 200, 200))
 
-                # df.loc[ind_df, 'pred_{}'.format(cols[k])] = pred_
+                df.loc[ind_df, 'pred_{}'.format(cols[k])] = pred_
 
-            t_gt_img = transform(gt_img)
-            t_pred_img = transform(pred_img)
-            output = torch.cat([batch[j], t_gt_img, t_pred_img], dim=2)
+            # t_gt_img = transform(gt_img)
+            # t_pred_img = transform(pred_img)
+            # output = torch.cat([batch[j], t_gt_img, t_pred_img], dim=2)
 
-            fp = os.path.join(save_path, 'input_imgs', photo_ids[j] + '.jpg')
-            save_image(output, fp=fp, normalize=True)
+            # fp = os.path.join(save_path, 'input_imgs', photo_ids[j] + '.jpg')
+            # save_image(output, fp=fp, normalize=True)
 
     ave_l1 = np.mean(l1_li, axis=0)
     std_l1 = np.std(l1_li, axis=0)
@@ -241,8 +241,7 @@ if __name__ == '__main__':
     #     pickle.dump(mse_li, f)
     # with open('.pkl', 'wb') as f:
     #     pickle.dump(df, f)
-
-    # df.to_pickle(args.pkl_path.split('.')[0] + '_add_est-sig.pkl')
+    df.to_pickle(args.pkl_path.split('.')[0] + '_add_est-sig.pkl')
 
     print(cols)
     print('l1')
