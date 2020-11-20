@@ -8,7 +8,7 @@ RUN apt-get install -y libgl1-mesa-dev
 RUN apt install -y tmux wget curl zip
 
 RUN pip install -U pip 
-RUN pip install -U pandas
+RUN pip install -U pandas pillow
 RUN pip install tqdm flake8
 RUN pip install seaborn scikit-learn
 RUN pip install shape-commentator future
