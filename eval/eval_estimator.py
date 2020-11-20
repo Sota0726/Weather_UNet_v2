@@ -12,19 +12,18 @@ import matplotlib.pyplot as plt
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=str, default='2')
 parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_06/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_WO-outlier-gray_duplicate.pkl')
+                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_06/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_WO-outlier-gray_duplicate_time6-18.pkl')
 parser.add_argument('--image_root', type=str, 
                     default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017')
 parser.add_argument('--estimator_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/estimator/'
-                    'est_res101_flicker-p03th01-WoOutlier_sep-train_aug_pre_loss-mse-reduction-none-grad-all-1/est_resnet101_20_step22680.pt'
+                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/estimator/'
+                    'est_res101-1119_time6-18/est_resnet101_15_step56160.pt'
                     )
 parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--batch_size', type=int, default=16)
 parser.add_argument('--num_workers', type=int, default=8)
-# parser.add_argument('--num_classes', type=int, default=6)
-# args = parser.parse_args()
-args = parser.parse_args(['--gpu', '0', '--estimator_path', './cp/estimator/est_res101-1112/est_resnet101_40_step43296.pt'])
+args = parser.parse_args()
+# args = parser.parse_args(['--gpu', '0', '--estimator_path', './cp/estimator/est_res101-1112/est_resnet101_40_step43296.pt'])
 
 
 # GPU Setting
@@ -109,7 +108,7 @@ if __name__ == '__main__':
     print('{} data were loaded'.format(len(df)))
 
     # cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'HeatIndexC', 'FeelsLikeC', 'DewPointC']
-    cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'FeelsLikeC', 'DewPointC']
+    cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'DewPointC']
     num_classes = len(cols)
 
     df_ = df.loc[:, cols].fillna(0)
@@ -119,7 +118,7 @@ if __name__ == '__main__':
     del df_
 
     df = df[df['mode'] == 'train']
-    # df = df[df['mode'] == 'train']
+    # df = df[df['mode'] == 'test']
 
     for col in cols:
         tab_img = make_matricx_img(df, df[col].tolist(), col)
@@ -127,14 +126,13 @@ if __name__ == '__main__':
 
     print('loaded {} data'.format(len(df)))
 
+    # torch >= 1.7
+    # transform = nn.Sequential(
+    #     transforms.ConvertImageDtype(torch.float32),
+    #     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    #     )
 
-    transform = nn.Sequential(
-        # transforms.Resize((args.input_size,)*2),
-        transforms.ConvertImageDtype(torch.float32),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        )
-
-    transform_ = transforms.Compose([
+    transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
@@ -165,7 +163,8 @@ if __name__ == '__main__':
         batch = data[0].to('cuda')
         signals = data[1].to('cuda')
         photo_ids = data[2]
-        batch = dataset.transform(batch)
+        # torch >= 1.7
+        # batch = dataset.transform(batch)
 
         preds = estimator(batch).detach()
         batch = batch.cpu()
@@ -206,8 +205,8 @@ if __name__ == '__main__':
                 draw_gt.text((0, k_ * 14), gt_text, font=font, fill=(200, 200, 200))
                 draw_pred.text((0, k_ * 14), pred_text, font=font, fill=(200, 200, 200))
 
-            t_gt_img = transform_(gt_img)
-            t_pred_img = transform_(pred_img)
+            t_gt_img = transform(gt_img)
+            t_pred_img = transform(pred_img)
             output = torch.cat([batch[j], t_gt_img, t_pred_img], dim=2)
 
             fp = os.path.join(save_path, 'input_imgs', photo_ids[j] + '.jpg')

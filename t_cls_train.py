@@ -6,13 +6,13 @@ parser.add_argument('--image_root', type=str,
                     default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017'
                     )
 parser.add_argument('--name', type=str, default='cUNet')
-# Nmaing rule : cUNet_[c(classifier) or e(estimator)]_[detail of condition]_[epoch]_[step]
+# Nmaing rule : cUNet_[c(classifier) or e(classifier)]_[detail of condition]_[epoch]_[step]
 parser.add_argument('--gpu', type=str, default='1')
 parser.add_argument('--save_dir', type=str, default='cp/transfer')
 parser.add_argument('--pkl_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_06/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_WO-outlier-gray_duplicate.pkl'
                     )
-parser.add_argument('--estimator_path', type=str,
+parser.add_argument('--classifier_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/classifier/i2w_classifier-res101-train-2020317/better_resnet101_epoch15_step59312.pt'
                     )
 parser.add_argument('--input_size', type=int, default=224)
@@ -30,7 +30,7 @@ parser.add_argument('-b2', '--adam_beta2', type=float, default=0.9)
 parser.add_argument('--amp', action='store_true')
 args = parser.parse_args()
 # args = parser.parse_args(args=['--gpu', '0', '--sampler', '--name', 'cUNet_w-c_res101-0317_RamCom_sampler', 
-#                                  '--estimator_path', '/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/classifier/cls_res101_i2w_sep-val_aug_20200408/resnet101_epoch25_step96382.pt'])
+#                                  '--classifier_path', '/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/classifier/cls_res101_i2w_sep-val_aug_20200408/resnet101_epoch25_step96382.pt'])
 
 # GPU Setting
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
@@ -70,8 +70,9 @@ class WeatherTransfer(object):
         self.batch_size = args.batch_size
         self.global_step = 0
 
-        self.name = 'Flickr_{}_sampler-{}_loss_lamda-c{}-w{}_b1-{}_b2-{}'.format(self.args.name, self.args.sampler, self.args.loss_lamda_cw[0],
-                                                                                        self.args.loss_lamda_cw[1], self.args.adam_beta1, self.args.adam_beta2)
+        self.name = 'Flickr_{}_sampler-{}_loss_lamda-c{}-w{}_b1-{}_b2-{}_GDratio-{}_amp-{}'.format(self.args.name, self.args.sampler, self.args.loss_lamda_cw[0],
+                                                                                        self.args.loss_lamda_cw[1], self.args.adam_beta1, self.args.adam_beta2,
+                                                                                        self.args.GD_train_ratio, self.args.amp)
         os.makedirs(os.path.join(args.save_dir, self.name), exist_ok=True)
         comment = '_lr-{}_bs-{}_ne-{}_name-{}'.format(args.lr, args.batch_size, args.num_epoch, self.name)
         self.writer = SummaryWriter(comment=comment)
@@ -125,7 +126,8 @@ class WeatherTransfer(object):
             df = pd.read_pickle(args.pkl_path)
             print('loaded {} data'.format(len(df)))
             df_shuffle = df.sample(frac=1)
-            df_sep = {'train': df_shuffle[df_shuffle['mode'] == 't_train'], 'test': df_shuffle[df_shuffle['mode'] == 'test']}
+            df_sep = {'train': pd.concat([df_shuffle[df_shuffle['mode'] == 't_train'], df[df['mode'] == 'train']]),
+                      'test': df_shuffle[df_shuffle['mode'] == 'test']}
             del df, df_shuffle
             loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], self.cols, transform=self.transform[s], class_id=True)
 
@@ -164,11 +166,11 @@ class WeatherTransfer(object):
             self.epoch = 0
             self.global_step = 0
 
-        self.estimator = torch.load(args.estimator_path)
-        self.estimator.eval()
+        self.classifier = torch.load(args.classifier_path)
+        self.classifier.eval()
 
         # Models to CUDA
-        [i.to('cuda') for i in [self.inference, self.discriminator, self.estimator]]
+        [i.to('cuda') for i in [self.inference, self.discriminator, self.classifier]]
 
         # Optimizer
         self.g_opt = torch.optim.Adam(self.inference.parameters(), lr=args.lr, betas=(args.adam_beta1, args.adam_beta2), weight_decay=args.lr/20)
@@ -218,7 +220,7 @@ class WeatherTransfer(object):
             #     img, label = test_data_iter.next()
             #     img = self.test_set.transform(img.to('cuda'))
             #     self.test_random_sample.append((img, label.to('cuda')))
-            del test_data_iter, self.test_loader
+            del test_data_iter self.test_loader
 
         self.scalar_dict = {}
         self.image_dict = {}
@@ -235,7 +237,7 @@ class WeatherTransfer(object):
         target_label = torch.argmax(r_labels, dim=1)
 
         # for real
-        pred_labels = self.estimator(images).detach()
+        pred_labels = self.classifier(images).detach()
         # --- master --- #
         pred_labels = F.softmax(pred_labels, dim=1)
         ep = 1e-7
@@ -250,7 +252,7 @@ class WeatherTransfer(object):
         fake_res = self.discriminator(fake_out, r_labels)
         fake_d_out = fake_res[0]
         # fake_feat = fake_res[3]
-        fake_c_out = self.estimator(fake_out)
+        fake_c_out = self.classifier(fake_out)
 
         # Calc Generator Loss
         g_loss_adv = gen_hinge(fake_d_out)  # Adversarial loss
@@ -294,7 +296,7 @@ class WeatherTransfer(object):
         self.d_opt.zero_grad()
 
         # for real
-        pred_labels = self.estimator(images).detach()
+        pred_labels = self.classifier(images).detach()
         # --- master --- #
         pred_labels = F.softmax(pred_labels, dim=1)
         # -------------- #
@@ -341,11 +343,11 @@ class WeatherTransfer(object):
         for i in range(self.batch_size):
             with torch.no_grad():
                 if ref_labels is None:
-                    ref_labels = self.estimator(ref_images)
+                    ref_labels = self.classifier(ref_images)
                     ref_labels = F.softmax(ref_labels, dim=1)
                 ref_labels_expand = torch.cat([ref_labels[i]] * self.batch_size).view(-1, self.num_classes)
                 fake_out_ = self.inference(images, ref_labels_expand)
-                fake_c_out_ = self.estimator(fake_out_)
+                fake_c_out_ = self.classifier(fake_out_)
                 # fake_d_out_ = self.discriminator(fake_out_, labels)[0]
                 real_d_out_ = self.discriminator(images, labels)[0]
                 fake_d_out_ = self.discriminator(fake_out_, ref_labels_expand)[0]
@@ -434,7 +436,7 @@ class WeatherTransfer(object):
                     continue
 
                 # --- LABEL PREPROCESS --- #
-                # rand_labels = self.estimator(rand_images).detach()
+                # rand_labels = self.classifier(rand_images).detach()
                 # --- master --- #
                 # rand_labels = F.softmax(rand_labels, dim=1)
                 # -------------- #
