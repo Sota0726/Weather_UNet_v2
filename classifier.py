@@ -29,7 +29,8 @@ import torch.nn as nn
 import torchvision.transforms as transforms
 import torchvision.models as models
 
-from apex import amp, optimizers
+if args.amp:
+    from apex import amp, optimizers
 
 from torch.utils.tensorboard import SummaryWriter
 
