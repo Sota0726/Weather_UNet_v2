@@ -12,16 +12,17 @@ import matplotlib.pyplot as plt
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=str, default='2')
 parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_06/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_WO-outlier-gray_duplicate_time6-18.pkl')
+                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp.pkl')
 parser.add_argument('--image_root', type=str, 
                     default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017')
 parser.add_argument('--estimator_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/estimator/'
-                    'est_res101-1119_time6-18/est_resnet101_15_step56160.pt'
+                    'est_res101-1121_data-equal-mlp-con-gt_time-6-18/est_resnet101_15_step77424.pt'
                     )
 parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--batch_size', type=int, default=16)
 parser.add_argument('--num_workers', type=int, default=8)
+parser.add_argument('--mode', type=str, default='test')
 args = parser.parse_args()
 # args = parser.parse_args(['--gpu', '0', '--estimator_path', './cp/estimator/est_res101-1112/est_resnet101_40_step43296.pt'])
 
@@ -76,39 +77,44 @@ def make_matricx_img(df, pred, col):
 def plot_hist(col, df, l1, pred, df_std, df_mean):
     # gt = df[col].tolist()
     gt = df[col].values
-    gt = gt * df_std[col] + df_mean[col]
+    # gt = gt * df_std[col] + df_mean[col]
     pred = pred * df_std[col] + df_mean[col]
     l1 = l1 * df_std[col]
-    fig = plt.figure(figsize=(20, 10))
+    l1_abs = np.abs(l1)
+    fig = plt.figure(figsize=(40, 10))
 
     if col == 'uvIndex' or col == 'visibility':
-        ax = fig.add_subplot(1, 3, 1)
+        ax = fig.add_subplot(1, 4, 1)
         ax.hist(gt, bins=range(0, 11))
         ax.set_xlabel('{}_gt'.format(col))
     else:
-        ax = fig.add_subplot(1, 3, 1)
+        ax = fig.add_subplot(1, 4, 1)
         ax.hist(gt, bins=100)
         ax.set_xlabel('{}_gt'.format(col))
 
     if col == 'uvIndex' or col == 'visibility':
-        ax = fig.add_subplot(1, 3, 2)
+        ax = fig.add_subplot(1, 4, 2)
         ax.hist(pred, bins=range(0, 11))
         ax.set_xlabel('{}_pred'.format(col))
     else:
-        ax = fig.add_subplot(1, 3, 2)
+        ax = fig.add_subplot(1, 4, 2)
         ax.hist(pred, bins=np.arange(np.min(pred), np.max(pred), 0.25))
         ax.set_xlabel('{}_pred'.format(col))
 
-    ax = fig.add_subplot(1, 3, 3)
+    ax = fig.add_subplot(1, 4, 3)
     ax.hist(l1, bins=100)
-    ax.set_xlabel('{}_l1'.format(col))
+    ax.set_xlabel('{}_LO'.format(col))
+
+    ax = fig.add_subplot(1, 4, 4)
+    ax.hist(l1_abs, bins=100)
+    ax.set_xlabel('{}_AbsL1'.format(col))
 
     fig.savefig(os.path.join(save_path, '{}_eval_result.jpg'.format(col)))
 
 
 if __name__ == '__main__':
 
-    mode = 'test'
+    mode = args.mode
     save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_estimator',
                              args.estimator_path.split('/')[-2],
                              'e' + args.estimator_path.split('/')[-1].split('_')[-2], mode)
@@ -118,21 +124,22 @@ if __name__ == '__main__':
     df = pd.read_pickle(args.pkl_path)
     print('{} data were loaded'.format(len(df)))
 
-    # cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'HeatIndexC', 'FeelsLikeC', 'DewPointC']
-    cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'DewPointC']
+    # cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'DewPointC']
+    cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'precipMM', 'pressure', 'DewPointC']
+
     num_classes = len(cols)
 
     df_ = df.loc[:, cols].fillna(0)
     df_mean = df_.mean()
     df_std = df_.std()
     df.loc[:, cols] = (df.loc[:, cols] - df_mean) / df_std
-    del df_
 
     # 推定結果を記録するようのcolumnsを初期化
     for col in cols:
         df['pred_{}'.format(col)] = '-99'
     df_col_list = df.columns.to_list()
-    df = df[df['mode'] == mode]
+    if not mode == 'all':
+        df = df[df['mode'] == mode]
     # df = df[df['mode'] == 'test']
 
     for col in cols:
@@ -210,7 +217,7 @@ if __name__ == '__main__':
             draw_gt.text((0, 0), 'gt signal', font=font, fill=(200, 200, 200))
             draw_pred.text((0, 0), 'pred signal', font=font, fill=(200, 200, 200))
 
-            # ind_df = df[df.photo == photo_ids[j]].index[0]
+            ind_df = df[df.photo == photo_ids[j]].index[0]
 
             for k in range(num_classes):
                 signal_ = signal[k].item() * df_std[k] + df_mean[k]
@@ -222,7 +229,7 @@ if __name__ == '__main__':
                 draw_gt.text((0, k_ * 14), gt_text, font=font, fill=(200, 200, 200))
                 draw_pred.text((0, k_ * 14), pred_text, font=font, fill=(200, 200, 200))
 
-                # df.loc[ind_df, 'pred_{}'.format(cols[k])] = pred_
+                df.loc[ind_df, 'pred_{}'.format(cols[k])] = pred_
 
             t_gt_img = transform(gt_img)
             t_pred_img = transform(pred_img)
@@ -243,7 +250,8 @@ if __name__ == '__main__':
     # with open('.pkl', 'wb') as f:
     #     pickle.dump(df, f)
 
-    # df.to_pickle(args.pkl_path.split('.')[0] + '_add_est-sig.pkl')
+    df.loc[:, cols] = df_
+    # df.to_pickle(args.pkl_path.split('.')[0] + '_add_est-sig_est1121.pkl')
 
     print(cols)
     print('l1')

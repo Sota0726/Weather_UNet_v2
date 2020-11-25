@@ -74,7 +74,7 @@ if __name__ == '__main__':
     df = pd.read_table(os.path.join(args.root_path, 'annotations', 'annotations_add_header.tsv'))
     print('{} data were loaded'.format(len(df)))
 
-    cols = ['daylight', 'night', 'sunrisesunset', 'dawndusk', 'midday']
+    cols = ['daylight', 'night', 'sunrisesunset', 'dawndusk']
     df = df.sample(frac=1)
     df_sep = {'train': df.iloc[100:], 'test': df.iloc[:100]}
 

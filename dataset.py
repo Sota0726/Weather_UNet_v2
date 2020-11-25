@@ -38,6 +38,7 @@ class FlickrDataLoader(Dataset):
         self.cls_li = ['Clear', 'Clouds', 'Rain', 'Snow', 'Mist']
         self.num_classes = len(columns)
         self.transform = transform
+        # self.times = df['orig_date_h']
         # torch >= 1.7
         # self.transform = transform.to('cuda')
         del df
@@ -56,6 +57,10 @@ class FlickrDataLoader(Dataset):
         sig_tensor = torch.from_numpy(np.array(sig)).float()
         del sig
         return sig_tensor
+
+    # def get_time(self, idx):
+    #     time = self.times[idx]
+    #     return time
 
     def __getitem__(self, idx):
 
@@ -104,7 +109,7 @@ class ImageLoader(Dataset):
         if self.transform:
             image = self.transform(image)
         # for train.py
-        return image, True
+        return image, self.paths[idx]
         # for inception_score.py
         # return image
 

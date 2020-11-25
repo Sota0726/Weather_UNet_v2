@@ -12,24 +12,21 @@ from sklearn.metrics import classification_report, confusion_matrix
 import seaborn as sns
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--gpu', type=int, default=1)
+parser.add_argument('--gpu', type=str, default=1)
 parser.add_argument('--image_root', type=str,
                     default='/mnt/fs2/2018/matsuzaki/dataset_fromnitta/Image/')
 parser.add_argument('--pkl_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/db/i2w/sepalated_data.pkl')
-parser.add_argument('--output_dir', type=str,
-                    default='/mnt/fs2/2019/takamuro/m2_research/weather_transfer/results/eval_classifier_i2w/cls_res101_i2w_sep-val_aug_20200408/e10')
 # imb mean imbalanced
-parser.add_argument('--classifer_path', type=str,
-                    default='cp/classifier_i2w/cls_res101_i2w_sep-val_aug_20200408/resnet101_epoch10_step40777.pt')
+parser.add_argument('--classifier_path', type=str,
+                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/classifier/cls_res101-1119_I2W-train/resnet101_epoch10_step40777.pt')
 # parser.add_argument('--classifer_path', type=str, default='cp/classifier/res_aug_5_cls/resnet101_95.pt')
 parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--batch_size', type=int, default=10)
 parser.add_argument('--num_workers', type=int, default=4)
 parser.add_argument('--num_classes', type=int, default=5)
-
 args = parser.parse_args()
-os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu)
+os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
 import torch
 import torchvision.transforms as transforms
@@ -41,7 +38,10 @@ from dataset import ClassImageLoader
 
 
 if __name__ == '__main__':
-    os.makedirs(args.output_dir, exist_ok=True)
+    save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_classifier',
+                        args.classifier_path.split('/')[-2],
+                        args.classifier_path.split('/')[-1].split('_')[-2])
+    os.makedirs(save_path, exist_ok=True)
     sep_data = pd.read_pickle(args.pkl_path)
     sep_data = sep_data['test']
     print('loaded {} data'.format(len(sep_data)))
@@ -62,15 +62,14 @@ if __name__ == '__main__':
             num_workers=args.num_workers)
 
     # load model
-    classifer = torch.load(args.classifer_path)
+    classifer = torch.load(args.classifier_path)
     classifer = nn.Sequential(
                         classifer,
                         nn.Softmax(dim=1)
                     )
     classifer.eval()
 
-    if args.gpu > 0:
-        classifer.cuda()
+    classifer.to('cuda')
 
     bs = args.batch_size
     s_li = ['sunny', 'cloudy', 'rain', 'snow', 'foggy']
@@ -95,8 +94,8 @@ if __name__ == '__main__':
     error_paths = all_path[y_true != y_pred]
     error_yt = y_true[y_true != y_pred]
     error_yp = y_pred[y_true != y_pred]
-    os.makedirs(os.path.join(args.output_dir, 'error_imgs'), exist_ok=True)
-    [shutil.copyfile(_, os.path.join(args.output_dir, 'error_imgs',
+    os.makedirs(os.path.join(save_path, 'error_imgs'), exist_ok=True)
+    [shutil.copyfile(_, os.path.join(save_path, 'error_imgs',
                      '{}-ture_{}_{}-pred.jpg'.format(s_li[error_yt[i]], _.split('/')[-1], s_li[error_yp[i]]))) for i, _ in enumerate(error_paths)]
 
     table = classification_report(y_true, y_pred)
@@ -106,9 +105,9 @@ if __name__ == '__main__':
     matrix = confusion_matrix(y_true, y_pred, labels=np.arange(len(s_li)))
 
     df = pd.DataFrame(data=matrix, index=s_li, columns=s_li)
-    df.to_pickle(os.path.join(args.output_dir, 'cm.pkl'))
+    df.to_pickle(os.path.join(save_path, 'cm.pkl'))
 
     plot = sns.heatmap(df, square=True, annot=True, fmt='d')
 
     fig = plot.get_figure()
-    fig.savefig(os.path.join(args.output_dir, 'pr_table.png'))
+    fig.savefig(os.path.join(save_path, 'pr_table.png'))
