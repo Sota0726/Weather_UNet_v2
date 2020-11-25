@@ -438,10 +438,12 @@ class WeatherTransfer(object):
                 if images.size(0) != self.batch_size:
                     continue
 
-                d_loss = self.update_discriminator(images, rand_signals)
-                if self.global_step % args.GD_train_ratio == 0:
+                # --- TRAINING --- #
+                if (self.global_step - 1) % args.GD_train_ratio == 0:
                     g_loss, r_loss, w_loss = self.update_inference(images, rand_signals, rand_images)
-                    tqdm_iter.set_postfix(OrderedDict(d_loss=d_loss, g_loss=g_loss, r_loss=r_loss, w_loss=w_loss))
+                d_loss = self.update_discriminator(images, rand_signals)
+                tqdm_iter.set_postfix(OrderedDict(d_loss=d_loss, g_loss=g_loss, r_loss=r_loss, w_loss=w_loss))
+
                 # --- EVALUATION ---#
                 if (self.global_step % eval_per_step == 0) and not args.image_only:
                     self.evaluation()
