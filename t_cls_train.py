@@ -10,7 +10,8 @@ parser.add_argument('--name', type=str, default='cUNet')
 parser.add_argument('--gpus', type=str, default='1')
 parser.add_argument('--save_dir', type=str, default='cp/transfer')
 parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp.pkl'
+                    # default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp.pkl'
+                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp-time6-18_Wo-person-animals.pkl'
                     )
 parser.add_argument('--classifier_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/classifier/cls_res101_1122_NotPreTrain/resnet101_epoch15_step59312.pt'
@@ -22,7 +23,7 @@ parser.add_argument('--num_epoch', type=int, default=150)
 parser.add_argument('--batch_size', type=int, default=16)
 parser.add_argument('--num_workers', type=int, default=8)
 parser.add_argument('--image_only', action='store_true')
-parser.add_argument('--GD_train_ratio', type=int, default=8)
+parser.add_argument('--GD_train_ratio', type=int, default=5)
 parser.add_argument('--sampler', action='store_true')
 parser.add_argument('--loss_lamda_cw', '-lm', type=float, nargs=2, default=[1, 1])
 parser.add_argument('-b1', '--adam_beta1', type=float, default=0.5)
@@ -62,7 +63,7 @@ from ops import *
 from dataset import ImageLoader, FlickrDataLoader
 from sampler import ImbalancedDatasetSampler
 from cunet import Conditional_UNet
-from disc import SNResNet64ProjectionDiscriminator
+from disc import SNResNetProjectionDiscriminator
 from utils import MakeOneHot
 
 
@@ -72,16 +73,15 @@ class WeatherTransfer(object):
 
         self.args = args
         self.batch_size = args.batch_size
-        if self.batch_size % 16 != 0:
-            print('set batch size multiple of 16')
-            exit()
+        if args.batch_size % 8 != 0:
+            print('set batch size multiple of 8')
         self.global_step = 0
 
         self.name = 'Flickr_{}_sampler-{}_loss_lamda-c{}-w{}-{}_b1-{}_b2-{}_GDratio-{}_amp-{}_MGpu-{}'.format(self.args.name, self.args.sampler, self.args.loss_lamda_cw[0],
                                                                                         self.args.loss_lamda_cw[1], self.args.weather_loss, self.args.adam_beta1, self.args.adam_beta2,
                                                                                         self.args.GD_train_ratio, self.args.amp, self.args.multi_gpu)
 
-        comment = '_lr-{}*{}_bs-{}_ne-{}'.format(str(int((args.batch_size / 16))), self.args.lr, self.args.batch_size, self.args.num_epoch)
+        comment = '_lr-{}*{}_bs-{}_ne-{}'.format(str((args.batch_size / 16)), self.args.lr, self.args.batch_size, self.args.num_epoch)
 
         self.writer = SummaryWriter(comment=comment + '_name-' + self.name)
         self.name = self.name + comment
@@ -91,7 +91,7 @@ class WeatherTransfer(object):
         self.real = Variable_Float(1., self.batch_size)
         self.fake = Variable_Float(0., self.batch_size)
         self.lmda = 0.
-        self.args.lr = args.lr * int(args.batch_size / 16)
+        self.args.lr = args.lr * (args.batch_size / 16)
 
         # torch >= 1.7
         # train_transform = nn.Sequential([
@@ -137,9 +137,10 @@ class WeatherTransfer(object):
             df = pd.read_pickle(args.pkl_path)
             print('loaded {} data'.format(len(df)))
             df_shuffle = df.sample(frac=1)
-            df_sep = {'train': df_shuffle[df_shuffle['mode'] == 't_train'],
+            temp = df_shuffle[df_shuffle['mode'] == 't_train']
+            df_sep = {'train': temp.iloc[:len(df_shuffle[df_shuffle['mode'] == 'train']), :],
                       'test': df_shuffle[df_shuffle['mode'] == 'test']}
-            del df, df_shuffle
+            del df, df_shuffle, temp
             loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], self.cols, transform=self.transform[s], class_id=True)
 
         else:
@@ -161,7 +162,7 @@ class WeatherTransfer(object):
         # Models
         print('Build Models...')
         self.inference = Conditional_UNet(num_classes=self.num_classes)
-        self.discriminator = SNResNet64ProjectionDiscriminator(num_classes=self.num_classes)
+        self.discriminator = SNResNetProjectionDiscriminator(num_classes=self.num_classes)
 
         exist_cp = sorted(glob(os.path.join(args.save_dir, self.name, '*')))
         if len(exist_cp) != 0:
