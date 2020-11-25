@@ -477,10 +477,10 @@ class WeatherTransfer(object):
                 labels = torch.eye(self.num_classes)[con].to('cuda:0')
 
                 # --- TRAINING --- #
-                d_loss = self.update_discriminator(images, rand_labels, labels)
-                if self.global_step % args.GD_train_ratio == 0:
+                if (self.global_step - 1) % args.GD_train_ratio == 0:
                     g_loss, r_loss, w_loss = self.update_inference(images, rand_labels, rand_images, labels=labels)
-                    tqdm_iter.set_postfix(OrderedDict(d_loss=d_loss, g_loss=g_loss, r_loss=r_loss, w_loss=w_loss))
+                d_loss = self.update_discriminator(images, rand_labels, labels)
+                tqdm_iter.set_postfix(OrderedDict(d_loss=d_loss, g_loss=g_loss, r_loss=r_loss, w_loss=w_loss))
 
                 # --- EVALUATION ---#
                 if (self.global_step % eval_per_step == 0) and not args.image_only:
