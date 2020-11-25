@@ -3,19 +3,18 @@ import os
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--image_root', type=str,
-                    default="/mnt/HDD8T/takamuro/dataset/photos_usa_2016/"
-                    # default='/mnt/fs2/2018/matsuzaki/dataset_fromnitta/Image/'
+                    default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017'
                     )
 parser.add_argument('--name', type=str, default='cUNet')
 # Nmaing rule : cUNet_[c(classifier) or e(estimator)]_[detail of condition]_[epoch]_[step]
-parser.add_argument('--gpu', type=str, default='0')
+parser.add_argument('--gpu', type=str, default='3')
 parser.add_argument('--save_dir', type=str, default='cp/transfer')
 parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/from_nitta/param03/temp_WoGray-LowConfOutlier-TestAndTrain_for_transfer-esttrain214938_test500.pkl'
+                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp.pkl'
                     )
 parser.add_argument('--estimator_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/estimator/'
-                    'est_res101_flicker-p03th01-WoOutlier_sep-train_aug_pre_loss-mse-reduction-none-grad-all-1/est_resnet101_20_step22680.pt'
+                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/estimator/'
+                    'est_res101-1121_data-equal-mlp-con-gt_time-6-18/est_resnet101_15_step77424.pt'
                     )
 parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--lr', type=float, default=1e-4)
@@ -23,15 +22,16 @@ parser.add_argument('--lmda', type=float, default=None)
 parser.add_argument('--num_epoch', type=int, default=150)
 parser.add_argument('--batch_size', type=int, default=16)
 parser.add_argument('--num_workers', type=int, default=8)
-parser.add_argument('--GD_train_ratio', type=int, default=1)
+parser.add_argument('--GD_train_ratio', type=int, default=8)
 parser.add_argument('--sampler', action='store_true')
-parser.add_argument('--augmentation', action='store_true')
 parser.add_argument('--image_only', action='store_true')
 parser.add_argument('--resume_cp', type=str)
-parser.add_argument('-b1', '--adam_beta1', type=float, default=0.0)
-parser.add_argument('-b2', '--adam_beta2', type=float, default=0.999)
+parser.add_argument('-b1', '--adam_beta1', type=float, default=0.5)
+parser.add_argument('-b2', '--adam_beta2', type=float, default=0.9)
+parser.add_argument('--amp', action='store_true')
+parser.add_argument('--multi_gpu', action='store_true')
 args = parser.parse_args()
-# args = parser.parse_args(args=['--augmentation', '--name', 'debug', '--resume_cp', './cp/transfer/cUNet_w-e_res101_expt4_RandomSig-LowConf_aug-True_sampler-False_dataset-temp_WoGray_for_transfer-esttrain214938_test500/cUNet_w-e_res101_expt4_RandomSig-LowConf_aug-True_sampler-False_dataset-temp_WoGray_for_transfer-esttrain214938_test500_e0010_s138000.pt'])
+# args = parser.parse_args(args=['--name', 'debug'])
 
 # GPU Setting
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
@@ -40,7 +40,8 @@ os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 import numpy as np
 import pandas as pd
 from PIL import Image
-from tqdm import trange, tqdm
+from tqdm import trange
+from collections import OrderedDict
 from glob import glob
 
 import torch
@@ -52,12 +53,14 @@ from torch.utils.data import Dataset
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import save_image, make_grid
 
+if args.amp:
+    from apex import amp, optimizers
+
 from ops import *
-from dataset import ImageLoader, FlickrDataLoader, ClassImageLoader
+from dataset import ImageLoader, FlickrDataLoader
 from sampler import ImbalancedDatasetSampler
 from cunet import Conditional_UNet
-from disc import SNResNetProjectionDiscriminator
-from utils import MakeOneHot
+from disc import SNResNet64ProjectionDiscriminator
 
 
 class WeatherTransfer(object):
@@ -68,47 +71,41 @@ class WeatherTransfer(object):
         self.batch_size = args.batch_size
         self.global_step = 0
 
-        self.name = '{}_aug-{}_sampler-{}_GDratio{}_adam-b1{}-b2{}_norm-{}_dataset-{}'.format(args.name, args.augmentation, args.sampler, '1-' + str(args.GD_train_ratio), 
-                                                                                        args.adam_beta1, args.adam_beta2, args.norm, args.pkl_path.split('/')[-1].split('.')[0])
+        self.name = '{}_sampler-{}_GDratio{}_adam-b1{}-b2{}_dataset-{}'.format(args.name, args.sampler, '1-' + str(args.GD_train_ratio), 
+                                                                                args.adam_beta1, args.adam_beta2, args.pkl_path.split('/')[-1].split('.')[0])
+
+        comment = '_lr-{}_bs-{}_ne-{}'.format(args.lr, args.batch_size, args.num_epoch)
+
+        self.writer = SummaryWriter(comment=comment + '_name-' + self.name)
+        self.name = self.name + comment
         os.makedirs(os.path.join(args.save_dir, self.name), exist_ok=True)
-        comment = '_lr-{}_bs-{}_ne-{}_name-{}'.format(args.lr, args.batch_size, args.num_epoch, self.name)
-        self.writer = SummaryWriter(comment=comment)
 
         # Consts
         self.real = Variable_Float(1., self.batch_size)
         self.fake = Variable_Float(0., self.batch_size)
         self.lmda = 0.
 
-        if args.augmentation:
-            train_transform = transforms.Compose([
-                transforms.RandomRotation(10),
-                transforms.RandomResizedCrop(args.input_size),
-                transforms.RandomHorizontalFlip(),
-                transforms.ColorJitter(
-                        brightness=0.5,
-                        contrast=0.3,
-                        saturation=0.3,
-                        hue=0
-                    ),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-            ])
-        else:
-            train_transform = transforms.Compose([
-                transforms.Resize((args.input_size,)*2),
-                transforms.RandomRotation(10),
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-            ])
-
-        test_transform = transforms.Compose([
-            transforms.Resize((args.input_size,) * 2),
+        train_transform = transforms.Compose([
+            transforms.RandomRotation(10),
+            # transforms.RandomResizedCrop(args.input_size),
+            transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(
+                    brightness=0.5,
+                    contrast=0.3,
+                    saturation=0.3,
+                    hue=0
+                ),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         ])
 
-        self.cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'FeelsLikeC', 'DewPointC']
+        test_transform = transforms.Compose([
+            # transforms.Resize((args.input_size,) * 2),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        ])
+
+        self.cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'precipMM', 'pressure', 'DewPointC']
         self.num_classes = len(self.cols)
 
         self.transform = {'train': train_transform, 'test': test_transform}
@@ -129,17 +126,22 @@ class WeatherTransfer(object):
         else:
             df = pd.read_pickle(args.pkl_path)
             # --- normalize --- #
-            temp = pd.read_pickle('/mnt/fs2/2019/okada/from_nitta/parm_0.3/sepalated_data_wo-outlier.pkl')
-            df_ = temp.loc[:, self.cols].fillna(0)
+            df_ = df.loc[:, self.cols].fillna(0)
             df_mean = df_.mean()
             df_std = df_.std()
 
             df.loc[:, self.cols] = (df.loc[:, self.cols].fillna(0) - df_mean) / df_std
             # ------------------ #
+            # --- memory min - max value --- #
+            self.sig_max = torch.from_numpy(np.array([np.max(df[col].values) for col in self.cols])).to('cuda:0')
+            self.sig_min = torch.from_numpy(np.array([np.min(df[col].values) for col in self.cols])).to('cuda:0')
+            # ------------------------------ #
+
             print('loaded {} signals data'.format(len(df)))
             df_shuffle = df.sample(frac=1)
-            df_sep = {'train': df_shuffle[df_shuffle['mode'] == 'train'], 'test': df_shuffle[df_shuffle['mode'] == 'test']}
-            del df, df_shuffle, temp
+            df_sep = {'train': df_shuffle[df_shuffle['mode'] == 't_train'],
+                      'test': df_shuffle[df_shuffle['mode'] == 'test']}
+            del df, df_shuffle
             loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], self.cols, transform=self.transform[s])
 
         train_set = loader('train')
@@ -154,7 +156,7 @@ class WeatherTransfer(object):
         print('Build Models...')
 
         self.inference = Conditional_UNet(num_classes=self.num_classes)
-        self.discriminator = SNResNetProjectionDiscriminator(num_classes=self.num_classes)
+        self.discriminator = SNResNet64ProjectionDiscriminator(num_classes=self.num_classes)
 
         if args.resume_cp:
             exist_cp = [args.resume_cp]
@@ -182,6 +184,16 @@ class WeatherTransfer(object):
         # Optimizer
         self.g_opt = torch.optim.Adam(self.inference.parameters(), lr=args.lr, betas=(args.adam_beta1, args.adam_beta2), weight_decay=args.lr/20)
         self.d_opt = torch.optim.Adam(self.discriminator.parameters(), lr=args.lr, betas=(args.adam_beta1, args.adam_beta2), weight_decay=args.lr/20)
+
+        # apex
+        if args.amp:
+            self.inference, self.g_opt = amp.initialize(self.inference, self.g_opt, opt_level='O1')
+            self.discriminator, self.d_opt = amp.initialize(self.discriminator, self.d_opt, opt_level='O1')
+
+        if args.multi_gpu and torch.cuda.device_count() > 1:
+            self.inference = nn.DataParallel(self.inference)
+            self.discriminator = nn.DataParallel(self.discriminator)
+            self.classifier = nn.DataParallel(self.classifier)
 
         # これらのloaderにsamplerは必要ないのか？
         self.train_loader = torch.utils.data.DataLoader(
@@ -214,7 +226,13 @@ class WeatherTransfer(object):
                     drop_last=True,
                     num_workers=args.num_workers)
             test_data_iter = iter(self.test_loader)
-            self.test_random_sample = [tuple(d.to('cuda') for d in test_data_iter.next()) for i in range(2)]
+            self.test_random_sample = [tuple(d.to('cuda:0') for d in test_data_iter.next()) for i in range(2)]
+            # torch >= 1.7
+            # self.test_random_sample = []
+            # for i in range(2):
+            #     img, label = test_data_iter.next()
+            #     img = self.test_set.transform(img.to('cuda:0'))
+            #     self.test_random_sample.append((img, label.to('cuda:0')))
             del test_data_iter, self.test_loader
 
         self.scalar_dict = {}
@@ -228,9 +246,17 @@ class WeatherTransfer(object):
 
         # for real
         pred_labels = self.estimator(images).detach()
+        for i, pred_label in enumerate(pred_labels):
+            pred_labels[i] = torch.minimum(self.sig_max, pred_label)
+            pred_labels[i] = torch.maximum(self.sig_min, pred_label)
 
         fake_out = self.inference(images, r_labels)
         fake_c_out = self.estimator(fake_out)
+        # 良い影響を及ぼすのか...
+        # for i, pred_label in enumerate(fake_c_out):
+        #     fake_c_out[i] = torch.min(self.sig_max, pred_label, dim=1)
+        #     fake_c_out[i] = torch.max(self.sig_min, pred_label, dim=1)
+
         fake_res = self.discriminator(fake_out, r_labels)
         fake_d_out = fake_res[0]
         # fake_feat = fake_res[3]
@@ -249,7 +275,11 @@ class WeatherTransfer(object):
 
         g_loss = g_loss_adv + lmda_con * loss_con + lmda_w * g_loss_w
 
-        g_loss.backward()
+        if self.args.amp:
+            with amp.scale_loss(g_loss, self.g_opt) as scale_loss:
+                scale_loss.backward()
+        else:
+            g_loss.backward()
         self.g_opt.step()
 
         self.scalar_dict.update({
@@ -262,8 +292,10 @@ class WeatherTransfer(object):
             })
 
         self.image_dict.update({
-            'io/train': torch.cat([images, fake_out, rand_images], dim=3),
+            'io/train': torch.cat([images, fake_out.detach(), rand_images], dim=3),
             })
+
+        return g_loss_adv.item(), loss_con.item(), g_loss_w.item()
 
     def update_discriminator(self, images, labels):
 
@@ -273,6 +305,9 @@ class WeatherTransfer(object):
         # for real
         real_c_out = self.estimator(images)
         pred_labels = real_c_out.detach()
+        for i, pred_label in enumerate(pred_labels):
+            pred_labels[i] = torch.minimum(self.sig_max, pred_label)
+            pred_labels[i] = torch.maximum(self.sig_min, pred_label)
 
         real_d_out_pred = self.discriminator(images, pred_labels)[0]
 
@@ -282,12 +317,18 @@ class WeatherTransfer(object):
 
         d_loss = dis_hinge(fake_d_out, real_d_out_pred)
 
-        d_loss.backward()
+        if self.args.amp:
+            with amp.scale_loss(d_loss, self.d_opt) as scale_loss:
+                scale_loss.backward()
+        else:
+            d_loss.backward()
         self.d_opt.step()
 
         self.scalar_dict.update({
             'losses/d_loss/train': d_loss.item()
             })
+
+        return d_loss.item()
 
     def evaluation(self):
         g_loss_l1_ = []
@@ -355,9 +396,8 @@ class WeatherTransfer(object):
         args = self.args
 
         # train setting
-        eval_per_step = 1000
-        display_per_step = 1000
-        save_per_epoch = 5
+        eval_per_step = 1000 * args.GD_train_ratio
+        display_per_step = 1000 * args.GD_train_ratio
 
         self.all_step = args.num_epoch * len(self.train_set) // self.batch_size
 
@@ -370,7 +410,7 @@ class WeatherTransfer(object):
                 self.global_step += 1
 
                 if self.global_step % eval_per_step == 0:
-                    out_path = os.path.join(args.save_dir, self.name, (self.name + '_e{:04d}_s{}.pt').format(self.epoch, self.global_step))
+                    out_path = os.path.join(args.save_dir, self.name, ('cUNet_est' + '_e{:04d}_s{}.pt').format(self.epoch, self.global_step))
                     state_dict = {
                             'inference': self.inference.state_dict(),
                             'discriminator': self.discriminator.state_dict(),
@@ -398,10 +438,10 @@ class WeatherTransfer(object):
                 if images.size(0) != self.batch_size:
                     continue
 
-                self.update_discriminator(images, rand_signals)
+                d_loss = self.update_discriminator(images, rand_signals)
                 if self.global_step % args.GD_train_ratio == 0:
-                    self.update_inference(images, rand_signals, rand_images)
-
+                    g_loss, r_loss, w_loss = self.update_inference(images, rand_signals, rand_images)
+                    tqdm_iter.set_postfix(OrderedDict(d_loss=d_loss, g_loss=g_loss, r_loss=r_loss, w_loss=w_loss))
                 # --- EVALUATION ---#
                 if (self.global_step % eval_per_step == 0) and not args.image_only:
                     self.evaluation()
