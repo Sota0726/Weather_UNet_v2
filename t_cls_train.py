@@ -10,10 +10,10 @@ parser.add_argument('--name', type=str, default='cUNet')
 parser.add_argument('--gpus', type=str, default='1')
 parser.add_argument('--save_dir', type=str, default='cp/transfer')
 parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_06/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_WO-outlier-gray_duplicate_time6-18.pkl'
+                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp.pkl'
                     )
 parser.add_argument('--classifier_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/classifier/cls_res101-1119_I2W-train/resnet101_epoch15_step59312.pt'
+                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/classifier/cls_res101_1122_NotPreTrain/resnet101_epoch15_step59312.pt'
                     )
 parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--lr', type=float, default=1e-4)
@@ -55,7 +55,8 @@ from torch.utils.data import Dataset
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import save_image, make_grid
 
-from apex import amp, optimizers
+if args.amp:
+    from apex import amp, optimizers
 
 from ops import *
 from dataset import ImageLoader, FlickrDataLoader
@@ -136,7 +137,7 @@ class WeatherTransfer(object):
             df = pd.read_pickle(args.pkl_path)
             print('loaded {} data'.format(len(df)))
             df_shuffle = df.sample(frac=1)
-            df_sep = {'train': pd.concat([df_shuffle[df_shuffle['mode'] == 't_train'], df[df['mode'] == 'train']]),
+            df_sep = {'train': df_shuffle[df_shuffle['mode'] == 't_train'],
                       'test': df_shuffle[df_shuffle['mode'] == 'test']}
             del df, df_shuffle
             loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], self.cols, transform=self.transform[s], class_id=True)
@@ -263,6 +264,8 @@ class WeatherTransfer(object):
         fake_d_out = fake_res[0]
         # fake_feat = fake_res[3]
         fake_c_out = self.classifier(fake_out)
+        if self.args.weather_loss == 'mse':
+            fake_c_out = F.softmax(fake_c_out, dim=1)
 
         # Calc Generator Loss
         g_loss_adv = gen_hinge(fake_d_out)  # Adversarial loss
@@ -362,6 +365,8 @@ class WeatherTransfer(object):
                 ref_labels_expand = torch.cat([ref_labels[i]] * self.batch_size).view(-1, self.num_classes)
                 fake_out_ = self.inference(images, ref_labels_expand)
                 fake_c_out_ = self.classifier(fake_out_)
+                if self.args.weather_loss == 'mse':
+                    fake_c_out_ = F.softmax(fake_c_out_, dim=1)
                 # fake_d_out_ = self.discriminator(fake_out_, labels)[0]
                 real_d_out_ = self.discriminator(images, labels)[0]
                 fake_d_out_ = self.discriminator(fake_out_, ref_labels_expand)[0]
@@ -411,7 +416,6 @@ class WeatherTransfer(object):
         # eval_per_step = 1000
         eval_per_step = 1000 * args.GD_train_ratio
         display_per_step = 1000 * args.GD_train_ratio
-        save_per_epoch = 5
 
         self.all_step = args.num_epoch * len(self.train_set) // self.batch_size
 
