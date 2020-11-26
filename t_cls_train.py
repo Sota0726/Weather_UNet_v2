@@ -223,7 +223,7 @@ class WeatherTransfer(object):
         if not args.image_only:
             self.test_loader = torch.utils.data.DataLoader(
                     self.test_set,
-                    batch_size=args.batch_size,
+                    batch_size=16,
                     shuffle=True,
                     drop_last=True,
                     num_workers=args.num_workers)
