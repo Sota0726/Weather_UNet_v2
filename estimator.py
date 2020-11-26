@@ -10,7 +10,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--image_root', type=str,
                     default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017')
 parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp.pkl')
+                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp-time6-18_Wo-person-animals.pkl')
 parser.add_argument('--save_path', type=str, default='cp/estimator')
 parser.add_argument('--name', type=str, default='noname-estimator')
 parser.add_argument('--gpu', type=str, default='0')
@@ -42,7 +42,7 @@ if args.amp:
     from apex import amp, optimizers
 
 from dataset import FlickrDataLoader
-from sampler import TimeImbalancedDatasetSampler
+from sampler import ImbalancedDatasetSampler
 from ops import l1_loss, adv_loss  # , soft_transform
 
 
@@ -95,7 +95,7 @@ if __name__ == '__main__':
     print('{} data were loaded'.format(len(df)))
 
     # cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'HeatIndexC', 'FeelsLikeC', 'DewPointC']
-    cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'precipMM', 'pressure', 'DewPointC']
+    cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'DewPointC']
 
     # standandelize
     df_ = df.loc[:, cols].fillna(0)
@@ -135,7 +135,7 @@ if __name__ == '__main__':
     if args.sampler:
         train_loader = torch.utils.data.DataLoader(
                 train_set,
-                sampler=TimeImbalancedDatasetSampler(train_set),
+                sampler=ImbalancedDatasetSampler(train_set),
                 drop_last=True,
                 batch_size=args.batch_size,
                 num_workers=args.num_workers)
@@ -149,7 +149,7 @@ if __name__ == '__main__':
 
     test_loader = torch.utils.data.DataLoader(
             test_set,
-            # sampler=TimeImbalancedDatasetSampler(test_set),
+            # sampler=ImbalancedDatasetSampler(test_set),
             drop_last=True,
             shuffle=True,
             batch_size=args.batch_size,

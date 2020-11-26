@@ -124,8 +124,8 @@ if __name__ == '__main__':
     df = pd.read_pickle(args.pkl_path)
     print('{} data were loaded'.format(len(df)))
 
-    # cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'DewPointC']
-    cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'precipMM', 'pressure', 'DewPointC']
+    cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'DewPointC']
+    # cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'precipMM', 'pressure', 'DewPointC']
 
     num_classes = len(cols)
 
@@ -134,12 +134,13 @@ if __name__ == '__main__':
     df_std = df_.std()
     df.loc[:, cols] = (df.loc[:, cols] - df_mean) / df_std
 
+    if not mode == 'all':
+        df = df[df['mode'] == mode]
+        df_ = df_[df_['mode'] == mode]
     # 推定結果を記録するようのcolumnsを初期化
     for col in cols:
         df['pred_{}'.format(col)] = '-99'
-    df_col_list = df.columns.to_list()
-    if not mode == 'all':
-        df = df[df['mode'] == mode]
+
     # df = df[df['mode'] == 'test']
 
     for col in cols:
@@ -251,7 +252,7 @@ if __name__ == '__main__':
     #     pickle.dump(df, f)
 
     df.loc[:, cols] = df_
-    # df.to_pickle(args.pkl_path.split('.')[0] + '_add_est-sig_est1121.pkl')
+    df.to_pickle(os.path.join(save_path, mode + '_resutl.pkl'))
 
     print(cols)
     print('l1')
