@@ -17,7 +17,7 @@ parser.add_argument('--gpu', type=str, default='0')
 parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--wd', type=float, default=1e-5)
-parser.add_argument('--num_epoch', type=int, default=100)
+parser.add_argument('--num_epoch', type=int, default=25)
 parser.add_argument('--batch_size', '-bs', type=int, default=16)
 parser.add_argument('--num_workers', type=int, default=8)
 parser.add_argument('--mode', type=str, default='T', help='T(Train data) or E(Evaluate data)')
@@ -48,8 +48,7 @@ from ops import l1_loss, adv_loss  # , soft_transform
 
 if __name__ == '__main__':
 
-    name = '{}_amp-{}_sampler-{}_PreTrained-{}_dataset-{}'.format(args.name, args.amp, args.sampler, args.pre_trained,
-                                                                  args.pkl_path.split('/')[-1].split('.')[0])
+    name = '{}_amp-{}_sampler-{}_PreTrained-{}'.format(args.name, args.amp, args.sampler, args.pre_trained)
 
     comment = '_lr-{}_bs-{}_ne-{}_x{}_name-{}'.format(args.lr,
                                                       args.batch_size,
@@ -104,11 +103,11 @@ if __name__ == '__main__':
     df.loc[:, cols] = (df.loc[:, cols] - df_mean) / df_std
 
     # time cut
-    df['orig_date_h'] = df['orig_date']
-    temp = df['orig_date_h'].str.split(':', expand=True)
-    temp_ = temp[0].str.split('T', expand=True)
-    df['orig_date_h'] = temp_[1].astype(int)
-    df = df[(df.orig_date_h >= 6) & (df.orig_date_h <= 18)]
+    # df['orig_date_h'] = df['orig_date']
+    # temp = df['orig_date_h'].str.split(':', expand=True)
+    # temp_ = temp[0].str.split('T', expand=True)
+    # df['orig_date_h'] = temp_[1].astype(int)
+    # df = df[(df.orig_date_h >= 6) & (df.orig_date_h <= 18)]
 
     # t_train    279424
     # val         56162
