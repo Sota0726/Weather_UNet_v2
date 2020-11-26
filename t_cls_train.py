@@ -137,10 +137,10 @@ class WeatherTransfer(object):
             df = pd.read_pickle(args.pkl_path)
             print('loaded {} data'.format(len(df)))
             df_shuffle = df.sample(frac=1)
-            temp = df_shuffle[df_shuffle['mode'] == 't_train']
-            df_sep = {'train': temp.iloc[:len(df_shuffle[df_shuffle['mode'] == 'train']), :],
+            df_sep = {'train': df_shuffle[df_shuffle['mode'] == 't_train'],
                       'test': df_shuffle[df_shuffle['mode'] == 'test']}
             del df, df_shuffle, temp
+            print(df_sep['train'].condition.value_counts())
             loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], self.cols, transform=self.transform[s], class_id=True)
 
         else:
@@ -414,7 +414,6 @@ class WeatherTransfer(object):
         args = self.args
 
         # train setting
-        # eval_per_step = 1000
         eval_per_step = 1000 * args.GD_train_ratio
         display_per_step = 1000 * args.GD_train_ratio
 
