@@ -139,7 +139,7 @@ class WeatherTransfer(object):
             df_shuffle = df.sample(frac=1)
             df_sep = {'train': df_shuffle[df_shuffle['mode'] == 't_train'],
                       'test': df_shuffle[df_shuffle['mode'] == 'test']}
-            del df, df_shuffle, temp
+            del df, df_shuffle
             print(df_sep['train'].condition.value_counts())
             loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], self.cols, transform=self.transform[s], class_id=True)
 
@@ -224,7 +224,7 @@ class WeatherTransfer(object):
         if not args.image_only:
             self.test_loader = torch.utils.data.DataLoader(
                     self.test_set,
-                    batch_size=16,
+                    batch_size=self.batch_size,
                     shuffle=True,
                     drop_last=True,
                     num_workers=args.num_workers)

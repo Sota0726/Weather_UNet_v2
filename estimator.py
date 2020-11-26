@@ -10,14 +10,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--image_root', type=str,
                     default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017')
 parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp.pkl')
+                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp-time6-18_Wo-person-animals.pkl')
 parser.add_argument('--save_path', type=str, default='cp/estimator')
 parser.add_argument('--name', type=str, default='noname-estimator')
 parser.add_argument('--gpu', type=str, default='0')
 parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--wd', type=float, default=1e-5)
-parser.add_argument('--num_epoch', type=int, default=100)
+parser.add_argument('--num_epoch', type=int, default=25)
 parser.add_argument('--batch_size', '-bs', type=int, default=16)
 parser.add_argument('--num_workers', type=int, default=8)
 parser.add_argument('--mode', type=str, default='T', help='T(Train data) or E(Evaluate data)')
@@ -42,14 +42,13 @@ if args.amp:
     from apex import amp, optimizers
 
 from dataset import FlickrDataLoader
-from sampler import TimeImbalancedDatasetSampler
+from sampler import ImbalancedDatasetSampler
 from ops import l1_loss, adv_loss  # , soft_transform
 
 
 if __name__ == '__main__':
 
-    name = '{}_amp-{}_sampler-{}_PreTrained-{}_dataset-{}'.format(args.name, args.amp, args.sampler, args.pre_trained,
-                                                                  args.pkl_path.split('/')[-1].split('.')[0])
+    name = '{}_amp-{}_sampler-{}_PreTrained-{}'.format(args.name, args.amp, args.sampler, args.pre_trained)
 
     comment = '_lr-{}_bs-{}_ne-{}_x{}_name-{}'.format(args.lr,
                                                       args.batch_size,
@@ -95,7 +94,7 @@ if __name__ == '__main__':
     print('{} data were loaded'.format(len(df)))
 
     # cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'HeatIndexC', 'FeelsLikeC', 'DewPointC']
-    cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'precipMM', 'pressure', 'DewPointC']
+    cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'DewPointC']
 
     # standandelize
     df_ = df.loc[:, cols].fillna(0)
@@ -104,11 +103,11 @@ if __name__ == '__main__':
     df.loc[:, cols] = (df.loc[:, cols] - df_mean) / df_std
 
     # time cut
-    df['orig_date_h'] = df['orig_date']
-    temp = df['orig_date_h'].str.split(':', expand=True)
-    temp_ = temp[0].str.split('T', expand=True)
-    df['orig_date_h'] = temp_[1].astype(int)
-    df = df[(df.orig_date_h >= 6) & (df.orig_date_h <= 18)]
+    # df['orig_date_h'] = df['orig_date']
+    # temp = df['orig_date_h'].str.split(':', expand=True)
+    # temp_ = temp[0].str.split('T', expand=True)
+    # df['orig_date_h'] = temp_[1].astype(int)
+    # df = df[(df.orig_date_h >= 6) & (df.orig_date_h <= 18)]
 
     # t_train    279424
     # val         56162
@@ -135,7 +134,7 @@ if __name__ == '__main__':
     if args.sampler:
         train_loader = torch.utils.data.DataLoader(
                 train_set,
-                sampler=TimeImbalancedDatasetSampler(train_set),
+                sampler=ImbalancedDatasetSampler(train_set),
                 drop_last=True,
                 batch_size=args.batch_size,
                 num_workers=args.num_workers)
@@ -149,7 +148,7 @@ if __name__ == '__main__':
 
     test_loader = torch.utils.data.DataLoader(
             test_set,
-            # sampler=TimeImbalancedDatasetSampler(test_set),
+            # sampler=ImbalancedDatasetSampler(test_set),
             drop_last=True,
             shuffle=True,
             batch_size=args.batch_size,
