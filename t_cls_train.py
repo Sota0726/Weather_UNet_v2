@@ -225,7 +225,8 @@ class WeatherTransfer(object):
             self.test_loader = torch.utils.data.DataLoader(
                     self.test_set,
                     batch_size=self.batch_size,
-                    shuffle=True,
+                    # shuffle=True,
+                    sampler=ImbalancedDatasetSampler(self.test_set),
                     drop_last=True,
                     num_workers=args.num_workers)
             test_data_iter = iter(self.test_loader)
@@ -265,7 +266,7 @@ class WeatherTransfer(object):
         fake_d_out = fake_res[0]
         # fake_feat = fake_res[3]
         fake_c_out = self.classifier(fake_out)
-        if self.args.weather_loss == 'mse':
+        if self.args.weather_loss != 'CE':
             fake_c_out = F.softmax(fake_c_out, dim=1)
 
         # Calc Generator Loss
@@ -366,7 +367,7 @@ class WeatherTransfer(object):
                 ref_labels_expand = torch.cat([ref_labels[i]] * self.batch_size).view(-1, self.num_classes)
                 fake_out_ = self.inference(images, ref_labels_expand)
                 fake_c_out_ = self.classifier(fake_out_)
-                if self.args.weather_loss == 'mse':
+                if self.args.weather_loss != 'CE':
                     fake_c_out_ = F.softmax(fake_c_out_, dim=1)
                 # fake_d_out_ = self.discriminator(fake_out_, labels)[0]
                 real_d_out_ = self.discriminator(images, labels)[0]
