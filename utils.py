@@ -40,7 +40,7 @@ class AdaIN(nn.Module):
         return x_std, x_mean
 
     def forward(self, x, y):
-        assert x.size(0)==y.size(0)
+        assert x.size(0) == y.size(0)
         size = x.size()
         bs, ch = size[:2]
         x_ = x.view(bs, ch, -1)
