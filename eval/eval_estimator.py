@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=str, default='2')
 parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp.pkl')
+                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp-time6-18_Wo-person-animals.pkl')
 parser.add_argument('--image_root', type=str, 
                     default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017')
 parser.add_argument('--estimator_path', type=str,
@@ -20,7 +20,7 @@ parser.add_argument('--estimator_path', type=str,
                     'est_res101-1121_data-equal-mlp-con-gt_time-6-18/est_resnet101_15_step77424.pt'
                     )
 parser.add_argument('--input_size', type=int, default=224)
-parser.add_argument('--batch_size', type=int, default=16)
+parser.add_argument('--batch_size', type=int, default=25)
 parser.add_argument('--num_workers', type=int, default=8)
 parser.add_argument('--mode', type=str, default='test')
 args = parser.parse_args()
@@ -122,7 +122,6 @@ if __name__ == '__main__':
     os.makedirs(os.path.join(save_path, 'input_imgs'), exist_ok=True)
 
     df = pd.read_pickle(args.pkl_path)
-    print('{} data were loaded'.format(len(df)))
 
     cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'DewPointC']
     # cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'precipMM', 'pressure', 'DewPointC']
@@ -135,6 +134,7 @@ if __name__ == '__main__':
     df.loc[:, cols] = (df.loc[:, cols] - df_mean) / df_std
 
     if not mode == 'all':
+        df_['mode'] = df['mode']
         df = df[df['mode'] == mode]
         df_ = df_[df_['mode'] == mode]
     # 推定結果を記録するようのcolumnsを初期化
@@ -148,7 +148,6 @@ if __name__ == '__main__':
         # tab_img.save('gt_{}.jpg'.format(col))
 
     print('loaded {} data'.format(len(df)))
-
     # torch >= 1.7
     # transform = nn.Sequential(
     #     transforms.ConvertImageDtype(torch.float32),
@@ -251,7 +250,7 @@ if __name__ == '__main__':
     # with open('.pkl', 'wb') as f:
     #     pickle.dump(df, f)
 
-    df.loc[:, cols] = df_
+    df.loc[:, cols] = df_.loc[:, cols]
     df.to_pickle(os.path.join(save_path, mode + '_resutl.pkl'))
 
     print(cols)

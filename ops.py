@@ -36,6 +36,9 @@ def pred_loss(preds, labels, cls='mse'):
         # one-hot to 0~4 label
         labels_ = torch.argmax(labels, dim=1)
         loss = criterion(preds, labels_)
+    elif cls == 'L1':
+        criterion = nn.L1Loss()
+        loss = criterion(preds, labels)
     else:
         criterion = nn.MSELoss()
         loss = criterion(preds, labels)
