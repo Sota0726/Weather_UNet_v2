@@ -7,14 +7,14 @@ parser.add_argument('--image_root', type=str,
                     )
 parser.add_argument('--name', type=str, default='cUNet')
 # Nmaing rule : cUNet_[c(classifier) or e(estimator)]_[detail of condition]_[epoch]_[step]
-parser.add_argument('--gpu', type=str, default='3')
+parser.add_argument('--gpu', type=str, default='0')
 parser.add_argument('--save_dir', type=str, default='cp/transfer')
 parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp.pkl'
+                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp-time6-18_Wo-person-animals.pkl'
                     )
 parser.add_argument('--estimator_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/estimator/'
-                    'est_res101-1121_data-equal-mlp-con-gt_time-6-18/est_resnet101_15_step77424.pt'
+                    'est_res101-1126_sampler_WopersonAnimals/est_resnet101_15_step66976.pt'
                     )
 parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--lr', type=float, default=1e-4)
@@ -105,7 +105,7 @@ class WeatherTransfer(object):
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         ])
 
-        self.cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'precipMM', 'pressure', 'DewPointC']
+        self.cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'DewPointC']
         self.num_classes = len(self.cols)
 
         self.transform = {'train': train_transform, 'test': test_transform}
@@ -193,7 +193,7 @@ class WeatherTransfer(object):
         if args.multi_gpu and torch.cuda.device_count() > 1:
             self.inference = nn.DataParallel(self.inference)
             self.discriminator = nn.DataParallel(self.discriminator)
-            self.classifier = nn.DataParallel(self.classifier)
+            self.estimator = nn.DataParallel(self.estimator)
 
         # これらのloaderにsamplerは必要ないのか？
         self.train_loader = torch.utils.data.DataLoader(
@@ -221,7 +221,7 @@ class WeatherTransfer(object):
         if not args.image_only:
             self.test_loader = torch.utils.data.DataLoader(
                     self.test_set,
-                    batch_size=16,
+                    batch_size=args.batch_size,
                     shuffle=True,
                     drop_last=True,
                     num_workers=args.num_workers)
@@ -246,9 +246,8 @@ class WeatherTransfer(object):
 
         # for real
         pred_labels = self.estimator(images).detach()
-        for i, pred_label in enumerate(pred_labels):
-            pred_labels[i] = torch.minimum(self.sig_max, pred_label)
-            pred_labels[i] = torch.maximum(self.sig_min, pred_label)
+        pred_labels = torch.minimum(self.sig_max, pred_labels)
+        pred_labels = torch.maximum(self.sig_min, pred_labels)
 
         fake_out = self.inference(images, r_labels)
         fake_c_out = self.estimator(fake_out)
@@ -303,11 +302,9 @@ class WeatherTransfer(object):
         self.d_opt.zero_grad()
 
         # for real
-        real_c_out = self.estimator(images)
-        pred_labels = real_c_out.detach()
-        for i, pred_label in enumerate(pred_labels):
-            pred_labels[i] = torch.minimum(self.sig_max, pred_label)
-            pred_labels[i] = torch.maximum(self.sig_min, pred_label)
+        pred_labels = self.estimator(images).detach()
+        pred_labels = torch.minimum(self.sig_max, pred_labels)
+        pred_labels = torch.maximum(self.sig_min, pred_labels)
 
         real_d_out_pred = self.discriminator(images, pred_labels)[0]
 
