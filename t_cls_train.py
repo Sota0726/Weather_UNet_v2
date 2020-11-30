@@ -63,7 +63,7 @@ from ops import *
 from dataset import ImageLoader, FlickrDataLoader
 from sampler import ImbalancedDatasetSampler
 from cunet import Conditional_UNet
-from disc import SNResNetProjectionDiscriminator
+from disc import SNResNet64ProjectionDiscriminator
 from utils import MakeOneHot
 
 
@@ -94,8 +94,7 @@ class WeatherTransfer(object):
         self.args.lr = args.lr * (args.batch_size / 16)
 
         # torch >= 1.7
-        # train_transform = nn.Sequential([
-        train_transform = transforms.Compose([
+        train_transform = nn.Sequential(
             transforms.RandomRotation(10),
             # transforms.RandomResizedCrop(args.input_size),
             transforms.RandomHorizontalFlip(),
@@ -105,21 +104,16 @@ class WeatherTransfer(object):
                     saturation=0.3,
                     hue=0
                 ),
-            transforms.ToTensor(),
-            # torch >= 1.7
-            # transforms.ConvertImageDtype(torch.float32),
+            transforms.ConvertImageDtype(torch.float32),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        ])
+        )
 
         # torch >= 1.7
-        # test_transform = nn.Sequential([
-        test_transform = transforms.Compose([
+        test_transform = nn.Sequential(
             # transforms.Resize((args.input_size,) * 2),
-            transforms.ToTensor(),
-            # torch >= 1.7
-            # transforms.ConvertImageDtype(torch.float32),
+            transforms.ConvertImageDtype(torch.float32),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        ])
+        )
 
         self.cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'FeelsLikeC', 'DewPointC']
         self.num_classes = len(['Clear', 'Clouds', 'Rain', 'Snow', 'Mist'])
@@ -162,7 +156,7 @@ class WeatherTransfer(object):
         # Models
         print('Build Models...')
         self.inference = Conditional_UNet(num_classes=self.num_classes)
-        self.discriminator = SNResNetProjectionDiscriminator(num_classes=self.num_classes)
+        self.discriminator = SNResNet64ProjectionDiscriminator(num_classes=self.num_classes)
 
         exist_cp = sorted(glob(os.path.join(args.save_dir, self.name, '*')))
         if len(exist_cp) != 0:
@@ -231,13 +225,11 @@ class WeatherTransfer(object):
                     num_workers=args.num_workers)
             test_data_iter = iter(self.test_loader)
 
-            self.test_random_sample = [tuple(d.to('cuda:0') for d in test_data_iter.next()) for i in range(2)]
-            # torch >= 1.7
-            # self.test_random_sample = []
-            # for i in range(2):
-            #     img, label = test_data_iter.next()
-            #     img = self.test_set.transform(img.to('cuda:0'))
-            #     self.test_random_sample.append((img, label.to('cuda:0')))
+            self.test_random_sample = []
+            for i in range(2):
+                img, label = test_data_iter.next()
+                img = self.test_set.transform(img.to('cuda:0'))
+                self.test_random_sample.append((img, label.to('cuda:0')))
             del test_data_iter, self.test_loader
 
         self.scalar_dict = {}
@@ -262,10 +254,14 @@ class WeatherTransfer(object):
         # ------------------- #
 
         fake_out = self.inference(images, r_labels)
-        fake_res = self.discriminator(fake_out, r_labels)
-        fake_d_out = fake_res[0]
+        # fake_res = self.discriminator(fake_out, r_labels)
+        # fake_d_out = fake_res[0]
         # fake_feat = fake_res[3]
         fake_c_out = self.classifier(fake_out)
+
+        # fake_res = self.discriminator(fake_out, F.softmax(fake_c_out, dim=1))
+        # fake_d_out = fake_res[0]
+
         if self.args.weather_loss != 'CE':
             fake_c_out = F.softmax(fake_c_out, dim=1)
 
@@ -326,7 +322,11 @@ class WeatherTransfer(object):
 
         # for fake
         fake_out = self.inference(images, r_labels)
-        fake_d_out = self.discriminator(fake_out.detach(), r_labels)[0]
+        # -- test --- #
+        # fake_c_out = self.classifier(fake_out).detach()
+        # fake_d_out = self.discriminator(fake_out.detach(), F.softmax(fake_c_out, dim=1))[0]
+        # ----------- #
+        # fake_d_out = self.discriminator(fake_out.detach(), r_labels)[0]
 
         d_loss = dis_hinge(fake_d_out, real_d_out_pred)
 
@@ -456,8 +456,8 @@ class WeatherTransfer(object):
                 rand_images, r_con = (d.to('cuda:0') for d in rand_data)
 
                 # torch >= 1.7
-                # images = self.train_set.transform(images)
-                # rand_images = self.train_set.transform(rand_images)
+                images = self.train_set.transform(images)
+                rand_images = self.train_set.transform(rand_images)
 
                 if images.size(0) != self.batch_size:
                     continue

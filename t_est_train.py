@@ -85,7 +85,8 @@ class WeatherTransfer(object):
         self.fake = Variable_Float(0., self.batch_size)
         self.lmda = 0.
 
-        train_transform = transforms.Compose([
+        # torch >= 1.7
+        train_transform = nn.Sequential(
             transforms.RandomRotation(10),
             # transforms.RandomResizedCrop(args.input_size),
             transforms.RandomHorizontalFlip(),
@@ -95,15 +96,16 @@ class WeatherTransfer(object):
                     saturation=0.3,
                     hue=0
                 ),
-            transforms.ToTensor(),
+            transforms.ConvertImageDtype(torch.float32),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        ])
+        )
 
-        test_transform = transforms.Compose([
+        # torch >= 1.7
+        test_transform = nn.Sequential(
             # transforms.Resize((args.input_size,) * 2),
-            transforms.ToTensor(),
+            transforms.ConvertImageDtype(torch.float32),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        ])
+        )
 
         self.cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'DewPointC']
         self.num_classes = len(self.cols)
@@ -226,13 +228,12 @@ class WeatherTransfer(object):
                     drop_last=True,
                     num_workers=args.num_workers)
             test_data_iter = iter(self.test_loader)
-            self.test_random_sample = [tuple(d.to('cuda:0') for d in test_data_iter.next()) for i in range(2)]
             # torch >= 1.7
-            # self.test_random_sample = []
-            # for i in range(2):
-            #     img, label = test_data_iter.next()
-            #     img = self.test_set.transform(img.to('cuda:0'))
-            #     self.test_random_sample.append((img, label.to('cuda:0')))
+            self.test_random_sample = []
+            for i in range(2):
+                img, label = test_data_iter.next()
+                img = self.test_set.transform(img.to('cuda:0'))
+                self.test_random_sample.append((img, label.to('cuda:0')))
             del test_data_iter, self.test_loader
 
         self.scalar_dict = {}
@@ -424,6 +425,10 @@ class WeatherTransfer(object):
 
                 images, con = (d.to('cuda') for d in data)
                 rand_images, r_con = (d.to('cuda') for d in rand_data)
+
+                # torch >= 1.7
+                images = self.train_set.transform(images)
+                rand_images = self.train_set.transform(rand_images)
 
                 # --- master --- #
                 # rand_signals = self.estimator(rand_images).detach()

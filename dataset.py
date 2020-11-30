@@ -8,7 +8,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 from torchvision.datasets import DatasetFolder
 from torchvision.datasets.folder import default_loader
-# from torchvision.io import read_image
+from torchvision.io import read_image
 
 
 def _collate_fn(batch):
@@ -37,10 +37,8 @@ class FlickrDataLoader(Dataset):
         self.labels = df['condition']
         self.cls_li = ['Clear', 'Clouds', 'Rain', 'Snow', 'Mist']
         self.num_classes = len(columns)
-        self.transform = transform
-        # self.times = df['orig_date_h']
         # torch >= 1.7
-        # self.transform = transform.to('cuda')
+        self.transform = transform.to('cuda')
         del df
         self.inf = inf
 
@@ -58,25 +56,14 @@ class FlickrDataLoader(Dataset):
         del sig
         return sig_tensor
 
-    # def get_time(self, idx):
-    #     time = self.times[idx]
-    #     return time
-
     def __getitem__(self, idx):
 
         # --- GET IMAGE ---#
         # torch > 1.7
-        # try:
-        #     image_tensor = read_image(os.path.join(self.root, self.photo_id[idx] + '.jpg'))
-        # except:
-        #     return self.__getitem__(idx)
         try:
-            image = Image.open(os.path.join(self.root, self.photo_id[idx] + '.jpg'))
+            image_tensor = read_image(os.path.join(self.root, self.photo_id[idx] + '.jpg'))
         except:
             return self.__getitem__(idx)
-        image = image.convert('RGB')
-        if self.transform:
-            image = self.transform(image)
 
         # --- GET LABEL ---#
         if not self.class_id:
