@@ -14,13 +14,13 @@ parser.add_argument('--pkl_path', type=str,
                     )
 parser.add_argument('--estimator_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/estimator/'
-                    'est_res101-1126_sampler_WopersonAnimals/est_resnet101_15_step66976.pt'
+                    'est_res101_1129_sampler_time6-18/est_resnet101_15_step69552.pt'
                     )
 parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--lmda', type=float, default=None)
 parser.add_argument('--num_epoch', type=int, default=150)
-parser.add_argument('--batch_size', type=int, default=16)
+parser.add_argument('--batch_size', '-bs', type=int, default=16)
 parser.add_argument('--num_workers', type=int, default=8)
 parser.add_argument('--GD_train_ratio', type=int, default=8)
 parser.add_argument('--sampler', action='store_true')
@@ -71,8 +71,8 @@ class WeatherTransfer(object):
         self.batch_size = args.batch_size
         self.global_step = 0
 
-        self.name = '{}_sampler-{}_GDratio{}_adam-b1{}-b2{}_dataset-{}'.format(args.name, args.sampler, '1-' + str(args.GD_train_ratio), 
-                                                                                args.adam_beta1, args.adam_beta2, args.pkl_path.split('/')[-1].split('.')[0])
+        self.name = '{}_sampler-{}_GDratio{}_adam-b1{}-b2{}'.format(args.name, args.sampler, '1-' + str(args.GD_train_ratio),
+                                                                    args.adam_beta1, args.adam_beta2)
 
         comment = '_lr-{}_bs-{}_ne-{}'.format(args.lr, args.batch_size, args.num_epoch)
 
@@ -84,6 +84,7 @@ class WeatherTransfer(object):
         self.real = Variable_Float(1., self.batch_size)
         self.fake = Variable_Float(0., self.batch_size)
         self.lmda = 0.
+        self.args.lr = args.lr * (args.batch_size / 16)
 
         # torch >= 1.7
         train_transform = nn.Sequential(
@@ -249,6 +250,7 @@ class WeatherTransfer(object):
         pred_labels = self.estimator(images).detach()
         pred_labels = torch.minimum(self.sig_max, pred_labels)
         pred_labels = torch.maximum(self.sig_min, pred_labels)
+        pred_labels = pred_labels.float()
 
         fake_out = self.inference(images, r_labels)
         fake_c_out = self.estimator(fake_out)
@@ -306,6 +308,7 @@ class WeatherTransfer(object):
         pred_labels = self.estimator(images).detach()
         pred_labels = torch.minimum(self.sig_max, pred_labels)
         pred_labels = torch.maximum(self.sig_min, pred_labels)
+        pred_labels = pred_labels.float()
 
         real_d_out_pred = self.discriminator(images, pred_labels)[0]
 

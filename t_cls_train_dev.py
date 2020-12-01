@@ -63,7 +63,7 @@ from ops import *
 from dataset import ImageLoader, FlickrDataLoader
 from sampler import ImbalancedDatasetSampler
 from cunet import Conditional_UNet
-from disc import SNResNet64ProjectionDiscriminator
+from disc import SNDisc
 from utils import MakeOneHot
 
 
@@ -156,7 +156,7 @@ class WeatherTransfer(object):
         # Models
         print('Build Models...')
         self.inference = Conditional_UNet(num_classes=self.num_classes)
-        self.discriminator = SNResNet64ProjectionDiscriminator(num_classes=self.num_classes)
+        self.discriminator = SNDisc(num_classes=self.num_classes)
 
         exist_cp = sorted(glob(os.path.join(args.save_dir, self.name, '*')))
         if len(exist_cp) != 0:

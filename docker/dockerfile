@@ -24,4 +24,4 @@ RUN git config --global user.email temp@gmail.com
 
 WORKDIR /home/sota/data/m2/
 
-# docker run -v /mnt/HDD8T/takamuro/:/mnt/HDD8T/takamuro -v /mnt/fs2:/mnt/fs2 -v /mnt/HDD8T/takamuro/m2/Weather_UNet_v2/:/home/sota/data/m2/ --gpus all --name weatherUNetV2 --shm-size 16G -p 6006:6006 -p 6007:6007 -it torch17_takamuro bash
+# docker run -v /mnt/SSD2T/takamuro/:/mnt/HDD8T/takamuro -v /mnt/fs2:/mnt/fs2 -v /mnt/HDD8T/takamuro/m2/Weather_UNet_v2/:/home/sota/data/m2/ --gpus all --name weatherUNetV2 --shm-size 16G -it torch18_takamuro bash
