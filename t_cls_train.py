@@ -254,13 +254,10 @@ class WeatherTransfer(object):
         # ------------------- #
 
         fake_out = self.inference(images, r_labels)
-        # fake_res = self.discriminator(fake_out, r_labels)
-        # fake_d_out = fake_res[0]
+        fake_res = self.discriminator(fake_out, r_labels)
+        fake_d_out = fake_res[0]
         # fake_feat = fake_res[3]
         fake_c_out = self.classifier(fake_out)
-
-        # fake_res = self.discriminator(fake_out, F.softmax(fake_c_out, dim=1))
-        # fake_d_out = fake_res[0]
 
         if self.args.weather_loss != 'CE':
             fake_c_out = F.softmax(fake_c_out, dim=1)
@@ -322,11 +319,8 @@ class WeatherTransfer(object):
 
         # for fake
         fake_out = self.inference(images, r_labels)
-        # -- test --- #
-        # fake_c_out = self.classifier(fake_out).detach()
-        # fake_d_out = self.discriminator(fake_out.detach(), F.softmax(fake_c_out, dim=1))[0]
-        # ----------- #
-        # fake_d_out = self.discriminator(fake_out.detach(), r_labels)[0]
+
+        fake_d_out = self.discriminator(fake_out.detach(), r_labels)[0]
 
         d_loss = dis_hinge(fake_d_out, real_d_out_pred)
 
