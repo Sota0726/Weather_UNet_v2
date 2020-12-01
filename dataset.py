@@ -61,7 +61,7 @@ class FlickrDataLoader(Dataset):
         # --- GET IMAGE ---#
         # torch > 1.7
         try:
-            image_tensor = read_image(os.path.join(self.root, self.photo_id[idx] + '.jpg'))
+            image = read_image(os.path.join(self.root, self.photo_id[idx] + '.jpg'))
         except:
             return self.__getitem__(idx)
 
