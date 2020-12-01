@@ -71,8 +71,8 @@ class WeatherTransfer(object):
         self.batch_size = args.batch_size
         self.global_step = 0
 
-        self.name = '{}_sampler-{}_GDratio{}_adam-b1{}-b2{}_dataset-{}'.format(args.name, args.sampler, '1-' + str(args.GD_train_ratio), 
-                                                                                args.adam_beta1, args.adam_beta2, args.pkl_path.split('/')[-1].split('.')[0])
+        self.name = '{}_sampler-{}_GDratio{}_adam-b1{}-b2{}'.format(args.name, args.sampler, '1-' + str(args.GD_train_ratio),
+                                                                    args.adam_beta1, args.adam_beta2)
 
         comment = '_lr-{}_bs-{}_ne-{}'.format(args.lr, args.batch_size, args.num_epoch)
 
@@ -84,6 +84,7 @@ class WeatherTransfer(object):
         self.real = Variable_Float(1., self.batch_size)
         self.fake = Variable_Float(0., self.batch_size)
         self.lmda = 0.
+        self.args.lr = args.lr * (args.batch_size / 16)
 
         # torch >= 1.7
         train_transform = nn.Sequential(
