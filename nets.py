@@ -18,7 +18,14 @@ def double_conv(in_channels, out_channels):
     return nn.Sequential(
         nn.Conv2d(in_channels, in_channels, 3, padding=1),
         nn.Conv2d(in_channels, out_channels, 3, padding=1, stride=2),
-        nn.BatchNorm2d(out_channels, affine=False),
+        # nn.BatchNorm2d(out_channels, affine=False),
+        nn.LeakyReLU(0.2, inplace=True)
+    )
+
+
+def up_conv(in_channels, out_channels):
+    return nn.Sequential(
+        nn.Conv2d(in_channels, out_channels, 3, padding=1),
         nn.LeakyReLU(0.2, inplace=True)
     )
 
