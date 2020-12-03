@@ -61,8 +61,7 @@ if __name__ == '__main__':
     os.makedirs(save_dir, exist_ok=True)
 
     # torch >= 1.7
-    # train_transform = nn.Sequential([
-    train_transform = transforms.Compose([
+    train_transform = nn.Sequential(
         transforms.RandomRotation(10),
         # transforms.RandomResizedCrop(args.input_size),
         transforms.RandomHorizontalFlip(),
@@ -72,21 +71,18 @@ if __name__ == '__main__':
                 saturation=0.3,
                 hue=0
             ),
-        transforms.ToTensor(),
         # torch >= 1.7
-        # transforms.ConvertImageDtype(torch.float32),
+        transforms.ConvertImageDtype(torch.float32),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-    ])
+    )
 
     # torch >= 1.7
-    # test_transform = nn.Sequential([
-    test_transform = transforms.Compose([
+    test_transform = nn.Sequential(
         # transforms.Resize((args.input_size,) * 2),
-        transforms.ToTensor(),
         # torch >= 1.7
-        # transforms.ConvertImageDtype(torch.float32),
+        transforms.ConvertImageDtype(torch.float32),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-    ])
+    )
 
     transform = {'train': train_transform, 'test': test_transform}
 
@@ -186,7 +182,7 @@ if __name__ == '__main__':
         for i, data in enumerate(train_loader, start=0):
             inputs, labels = (d.to('cuda') for d in data)
             # torch >= 1.7
-            # train_set.transform(inputs)
+            inputs = train_set.transform(inputs)
             tqdm_iter.set_description('Training [ {} step ]'.format(global_step))
 
             # optimize
@@ -214,7 +210,7 @@ if __name__ == '__main__':
                     with torch.no_grad():
                         inputs_, labels_ = (d.to('cuda') for d in data_)
                         # torch >= 1.7
-                        # train_set.transform(inputs_)
+                        inputs_ = train_set.transform(inputs_)
                         outputs_ = model(inputs_).detach()
                         diff_mse_ = adv_loss(outputs_, labels_)
                         diff_l1_ = l1_loss(outputs_, labels_)
