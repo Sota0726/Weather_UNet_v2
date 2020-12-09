@@ -10,7 +10,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--image_root', type=str,
                     default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017')
 parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp-time6-18_Wo-person-animals.pkl')
+                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/outdoor_all_dbdate_wwo_weather_2016_17_delnoise_WoPerson_sky-10_L-05.pkl')
 parser.add_argument('--save_path', type=str, default='cp/estimator')
 parser.add_argument('--name', type=str, default='noname-estimator')
 parser.add_argument('--gpu', type=str, default='0')

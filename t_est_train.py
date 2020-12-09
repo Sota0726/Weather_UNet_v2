@@ -10,17 +10,17 @@ parser.add_argument('--name', type=str, default='cUNet')
 parser.add_argument('--gpu', type=str, default='0')
 parser.add_argument('--save_dir', type=str, default='cp/transfer')
 parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp-time6-18_Wo-person-animals.pkl'
+                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/outdoor_all_dbdate_wwo_weather_2016_17_delnoise_WoPerson_sky-10_L-05.pkl'
                     )
 parser.add_argument('--estimator_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/estimator/'
-                    'est_res101_1129_sampler_time6-18/est_resnet101_15_step69552.pt'
+                    'est_res101-1203_sampler_pre_WoPerson_sky-10_L-05/est_resnet101_15_step62240.pt'
                     )
 parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--lmda', type=float, default=None)
 parser.add_argument('--num_epoch', type=int, default=150)
-parser.add_argument('--batch_size', '-bs', type=int, default=16)
+parser.add_argument('--batch_size', '-bs', type=int, default=24)
 parser.add_argument('--num_workers', type=int, default=8)
 parser.add_argument('--GD_train_ratio', type=int, default=8)
 parser.add_argument('--sampler', action='store_true')
@@ -142,7 +142,9 @@ class WeatherTransfer(object):
 
             print('loaded {} signals data'.format(len(df)))
             df_shuffle = df.sample(frac=1)
-            df_sep = {'train': df_shuffle[df_shuffle['mode'] == 't_train'],
+            # df_sep = {'train': df_shuffle[df_shuffle['mode'] == 't_train'],
+            #           'test': df_shuffle[df_shuffle['mode'] == 'test']}
+            df_sep = {'train': df_shuffle[(df_shuffle['mode'] == 't_train') | (df_shuffle['mode'] == 'train')],
                       'test': df_shuffle[df_shuffle['mode'] == 'test']}
             del df, df_shuffle
             loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], self.cols, transform=self.transform[s])
