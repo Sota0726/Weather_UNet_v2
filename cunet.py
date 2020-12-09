@@ -94,7 +94,7 @@ class Conditional_UNet_V2(nn.Module):
                 m.bias.data.fill_(0)
 
     def __init__(self, num_classes):
-        super(Conditional_UNet, self).__init__()
+        super(Conditional_UNet_V2, self).__init__()
 
         self.dconv_down1 = r_double_conv(3, 64)
         self.dconv_down2 = r_double_conv(64, 128)
@@ -103,6 +103,7 @@ class Conditional_UNet_V2(nn.Module):
 
         self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
         self.dropout = nn.Dropout(p=0.3)
+        self.maxpool = nn.MaxPool2d(2)
         # self.dropout_half = HalfDropout(p=0.3)
 
         self.adain3 = AdaIN(512, num_classes=num_classes)

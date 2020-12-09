@@ -148,13 +148,14 @@ if __name__ == '__main__':
         # tab_img.save('gt_{}.jpg'.format(col))
 
     print('loaded {} data'.format(len(df)))
+    input()
     # torch >= 1.7
-    # transform = nn.Sequential(
-    #     transforms.ConvertImageDtype(torch.float32),
-    #     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-    #     )
+    transform = nn.Sequential(
+        transforms.ConvertImageDtype(torch.float32),
+        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        )
 
-    transform = transforms.Compose([
+    transform_rgb = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
@@ -186,7 +187,7 @@ if __name__ == '__main__':
         signals = data[1].to('cuda')
         photo_ids = data[2]
         # torch >= 1.7
-        # batch = dataset.transform(batch)
+        batch = dataset.transform(batch)
 
         preds = estimator(batch).detach()
         batch = batch.cpu()
@@ -231,8 +232,8 @@ if __name__ == '__main__':
 
                 df.loc[ind_df, 'pred_{}'.format(cols[k])] = pred_
 
-            t_gt_img = transform(gt_img)
-            t_pred_img = transform(pred_img)
+            t_gt_img = transform_rgb(gt_img)
+            t_pred_img = transform_rgb(pred_img)
             output = torch.cat([batch[j], t_gt_img, t_pred_img], dim=2)
 
             fp = os.path.join(save_path, 'input_imgs', photo_ids[j] + '.jpg')
