@@ -11,19 +11,19 @@ parser.add_argument('--gpus', type=str, default='1')
 parser.add_argument('--save_dir', type=str, default='cp/transfer')
 parser.add_argument('--pkl_path', type=str,
                     # default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp.pkl'
-                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp-time6-18_Wo-person-animals.pkl'
+                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/outdoor_all_dbdate_wwo_weather_2016_17_delnoise_WoPerson_sky-10_L-05.pkl'
                     )
 parser.add_argument('--classifier_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/classifier/cls_res101_1122_NotPreTrain/resnet101_epoch15_step59312.pt'
+                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/classifier/cls_res101-1119_I2W-train/resnet101_epoch15_step59312.pt'
                     )
 parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--lmda', type=float, default=None)
 parser.add_argument('--num_epoch', type=int, default=150)
-parser.add_argument('--batch_size', type=int, default=16)
+parser.add_argument('--batch_size', '-bs', type=int, default=24)
 parser.add_argument('--num_workers', type=int, default=8)
 parser.add_argument('--image_only', action='store_true')
-parser.add_argument('--GD_train_ratio', type=int, default=5)
+parser.add_argument('--GD_train_ratio', type=int, default=8)
 parser.add_argument('--sampler', action='store_true')
 parser.add_argument('--loss_lamda_cw', '-lm', type=float, nargs=2, default=[1, 1])
 parser.add_argument('-b1', '--adam_beta1', type=float, default=0.5)
@@ -32,8 +32,7 @@ parser.add_argument('--amp', action='store_true')
 parser.add_argument('--multi_gpu', action='store_true')
 parser.add_argument('--weather_loss', type=str, default='CE')
 args = parser.parse_args()
-# args = parser.parse_args(args=['--gpu', '3', '--sampler', '--name', 'cUNet_w-c_res101-0317_RamCom_sampler', 
-#                                  '--classifier_path', '/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/classifier/cls_res101_i2w_sep-val_aug_20200408/resnet101_epoch25_step96382.pt'])
+# args = parser.parse_args(args=['--gpu', '3', '--sampler', '--name', 'debug'])
 
 # GPU Setting
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
@@ -63,7 +62,7 @@ from ops import *
 from dataset import ImageLoader, FlickrDataLoader
 from sampler import ImbalancedDatasetSampler
 from cunet import Conditional_UNet
-from disc import SNResNet64ProjectionDiscriminator
+from disc import SNDisc
 from utils import MakeOneHot
 
 
@@ -131,7 +130,9 @@ class WeatherTransfer(object):
             df = pd.read_pickle(args.pkl_path)
             print('loaded {} data'.format(len(df)))
             df_shuffle = df.sample(frac=1)
-            df_sep = {'train': df_shuffle[df_shuffle['mode'] == 't_train'],
+            # df_sep = {'train': df_shuffle[df_shuffle['mode'] == 't_train'],
+            #           'test': df_shuffle[df_shuffle['mode'] == 'test']}
+            df_sep = {'train': df_shuffle[(df_shuffle['mode'] == 't_train') | (df_shuffle['mode'] == 'train')],
                       'test': df_shuffle[df_shuffle['mode'] == 'test']}
             del df, df_shuffle
             print(df_sep['train'].condition.value_counts())
@@ -148,6 +149,8 @@ class WeatherTransfer(object):
         train_set = loader('train')
         test_set = loader('test')
         print('train:{} test:{} sets have already loaded.'.format(len(train_set), len(test_set)))
+        print('If you have done to confirm load data num, please push enter')
+        input()
         return train_set, test_set
 
     def build(self):
@@ -156,7 +159,7 @@ class WeatherTransfer(object):
         # Models
         print('Build Models...')
         self.inference = Conditional_UNet(num_classes=self.num_classes)
-        self.discriminator = SNResNet64ProjectionDiscriminator(num_classes=self.num_classes)
+        self.discriminator = SNDisc(num_classes=self.num_classes)
 
         exist_cp = sorted(glob(os.path.join(args.save_dir, self.name, '*')))
         if len(exist_cp) != 0:
