@@ -15,18 +15,17 @@ parser.add_argument('--gpu', type=str, default='3')
 parser.add_argument('--image_root', type=str,
                     default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017')
 parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/from_nitta/param03/50test_high-consis_from-10images-each-con2.pkl')
+                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/outdoor_all_dbdate_wwo_weather_2016_17_delnoise_WoPerson_sky-10_L-05_50testImgs.pkl')
 # parser.add_argument('--output_dir', '-o', type=str,
 #                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/results/eval_est_transfer/'
 #                     'cUNet_w-e_res101-0408_train-D1T1_adam_b1-00_aug_wloss-mse_train200k-test500/e23_322k')
 parser.add_argument('--cp_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/transfer/'
-                    'cUNet_w-e_res101-0408_train-D1T1_adam_b1-00_aug_wloss-mse_train200k-test500/cUNet_w-e_res101-0408_train-D1T1_adam_b1-00_aug_wloss-mse_train200k-test500_e0023_s322000.pt')
+                    default='cp/transfer/1204_cUNet_w-e_res101-1203L05e15_SNDisc_sampler-False_GDratio1-8_adam-b10.5-b20.9_lr-0.0001_bs-24_ne-150/cUNet_est_e0110_s1168000.pt')
 parser.add_argument('--estimator_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/estimator/'
-                            'est_res101_flicker-p03th01-WoOutlier_sep-train_aug_pre_loss-mse-reduction-none-grad-all-1/est_resnet101_20_step22680.pt')
+                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/estimator/'
+                    'est_res101-1203_sampler_pre_WoPerson_sky-10_L-05/est_resnet101_15_step62240.pt')
 parser.add_argument('--input_size', type=int, default=224)
-parser.add_argument('--batch_size', type=int, default=50)
+parser.add_argument('--batch_size', type=int, default=5)
 parser.add_argument('--num_workers', type=int, default=8)
 parser.add_argument('--image_only', action='store_true')
 args = parser.parse_args()
@@ -65,28 +64,30 @@ if __name__ == '__main__':
     else:
         cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'DewPointC']
 
-        df = pd.read_pickle(args.pkl_path)
-        # --- normalize --- #
-        df_ = df.loc[:, cols].fillna(0)
+        # get norm paramator
+        temp = pd.read_pickle('/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/outdoor_all_dbdate_wwo_weather_2016_17_delnoise_WoPerson_sky-10_L-05.pkl')
+        df_ = temp.loc[:, cols].fillna(0)
         df_mean = df_.mean()
         df_std = df_.std()
 
+        df = pd.read_pickle(args.pkl_path)
+        df_.loc[:, cols] = (df_.loc[:, cols].fillna(0) - df_mean) / df_std
         df.loc[:, cols] = (df.loc[:, cols].fillna(0) - df_mean) / df_std
-
         df_sep = df[df['mode'] == 'test']
         print('loaded {} signals data'.format(len(df_sep)))
-        del df
-        dataset = FlickrDataLoader(args.image_root, df_sep, cols, transform=transform)
+        del df, df_, temp
+        dataset = FlickrDataLoader(args.image_root, df_sep, cols, transform=transform, inf=True)
 
     loader = torch.utils.data.DataLoader(
             dataset,
+            # sampler=ImbalancedDatasetSampler(dataset),
             batch_size=args.batch_size,
             num_workers=args.num_workers,
             drop_last=True
             )
     random_loader = torch.utils.data.DataLoader(
             dataset,
-            # sampler=ImbalancedDatasetSampler(dataset),
+            sampler=ImbalancedDatasetSampler(dataset),
             batch_size=args.batch_size,
             num_workers=args.num_workers,
             drop_last=True
@@ -125,36 +126,17 @@ if __name__ == '__main__':
         r_photos = rnd[2]
 
         blank = torch.zeros_like(batch[0]).unsqueeze(0)
-        # pred_sig = estimator(r_batch).detach()
-        # with torch.no_grad():
-        #     out = transfer(batch, pred_sig)
-        #     # out_ = transfer(batch, r_sig)
-        #     [save_image(output, os.path.join(args.output_dir,
-        #          '{}_{}'.format('pred', photos[j])), normalize=True)
-        #          for j, output in enumerate(out)]
-        #     [save_image(output, os.path.join(args.output_dir,
-        #         '{}_{}'.format('rand', photos[j])), normalize=True)
-        #         for j, output in enumerate(out_)]
-
+        ref_imgs = torch.cat([blank] + list(torch.split(r_batch, 1)), dim=3)
+        out_l = []
         for i in tqdm(range(bs)):
             with torch.no_grad():
                 ref_labels_expand = torch.cat([r_sig[i]] * bs).view(-1, len(cols))
                 out = transfer(batch, ref_labels_expand)
-
+                out_l.append(out)
                 [save_image(output, os.path.join(save_path,
                  '{}-{}_r-{}.jpg'.format('gt', b_photos[j], r_photos[i])), normalize=True, scale_each=True)
                  for j, output in enumerate(out)]
-                # [save_image(output, os.path.join(args.output_dir,
-                #  '{}_{}'.format('rand', photos[j]), normalize=True)
-                #  for j, output in enumerate(out_)]
-        #     out_li.append(out)
-        # ref_img = torch.cat([blank] + list(torch.split(r_batch, 1)), dim=3)
-        # in_out_img = torch.cat([batch] + out_li, dim=3)
-        # res_img = torch.cat([ref_img, in_out_img], dim=0)
-        # save_image(ref_img, os.path.join(args.output_dir, '0ref.jpg'), normalize=True)
-        # [save_image(out, os.path.join(args.output_dir, '{}_in_out.jpg'.format(i)), normalize=True) for i, out in enumerate(in_out_img)]
-        # save_image(res_img, os.path.join(args.output_dir, '0summury.jpg'), normalize=True)
 
-        # res = make_table_img(batch, r_batch, out_li)
-        # save_image(res, os.path.join(args.output_dir, 'summary_results_{}.jpg'.format(str(k))), normalize=True)
-
+        io_im = torch.cat([batch] + out_l, dim=3)
+        tab_im = torch.cat([ref_imgs, io_im], dim=0)
+        save_image(tab_im, fp=os.path.join(save_path, '{}.jpg'.format(k)), normalize=True, scale_each=True, nrow=1)
