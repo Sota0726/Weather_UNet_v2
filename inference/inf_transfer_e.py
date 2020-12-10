@@ -109,7 +109,7 @@ if __name__ == '__main__':
     bs = args.batch_size
     out_li = []
 
-    save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_est_transfer',
+    save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'est',
                              args.cp_path.split('/')[-2],
                              'e' + args.cp_path.split('/')[-1].split('_')[-2])
     os.makedirs(save_path, exist_ok=True)
