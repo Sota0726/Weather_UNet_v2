@@ -19,6 +19,7 @@ parser.add_argument('--num_epoch', type=int, default=100)
 parser.add_argument('--batch_size', type=int, default=64)
 parser.add_argument('--mode', type=str, default='T')
 parser.add_argument('--pre_trained', action='store_true')
+parser.add_argument('--model', type=str, default='mobilenet')
 parser.add_argument('--amp', action='store_true')
 args = parser.parse_args()
 
@@ -59,7 +60,7 @@ def validation(model, validloader):
         correct += (result == target).sum().item()
 
     validation_loss /= len(validloader)
-    acc = correct / (len(validloader) * 40)
+    acc = correct / (len(validloader) * num_classes * args.batch_size)
 
     return acc, validation_loss
 
@@ -122,12 +123,22 @@ if __name__ == '__main__':
     num_classes = train_set.num_classes
 
     # modify exist resnet101 model
-    if not args.pre_trained:
-        model = models.resnet101(pretrained=False, num_classes=num_classes)
-    else:
-        model = models.resnet101(pretrained=True)
+    if args.model == 'resnet':
+        model = models.resnet101(pretrained=args.pre_trained)
         num_features = model.fc.in_features
-        model.fc = nn.Linear(num_features, num_classes)
+        model.fc = nn.Linear(num_features, num_classes, bias=True)
+    elif args.model == 'mobilenet':
+        model = models.mobilenet_v2(pretrained=args.pre_trained)
+        num_features = model.classifier[1].in_features
+        model.classifier[1] = nn.Linear(num_features, num_classes, bias=True)
+    elif args.model == 'resnext':
+        model = models.resnext50_32x4d(pretrained=args.pre_trained)
+        num_features = model.fc.in_features
+        model.fc = nn.Linear(num_features, num_classes, bias=True)
+    elif args.model == 'wideresnet':
+        model = models.wide_resnet50_2(pretrained=args.pre_trained)
+        num_features = model.fc.in_features
+        model.fc = nn.Linear(num_features, num_classes, bias=True)
 
     model.to('cuda')
 
@@ -165,7 +176,7 @@ if __name__ == '__main__':
             outputs = torch.sigmoid(outputs)
             result = outputs > 0.5
             correct = (result == labels).sum().item()
-            acc = correct / num_classes
+            acc = correct / (num_classes * args.batch_size)
             acc_li.append(acc)
 
             if args.amp:
