@@ -241,3 +241,46 @@ class TransientAttributes(Dataset):
         labels_tensor = self.get_class(idx)
 
         return image, labels_tensor
+
+
+class CelebALoader(Dataset):
+    def __init__(self, root_path, df, transform=None, inf=False):
+        # attributes
+        cols = ['5_o_Clock_Shadow', 'Arched_Eyebrows', 'Attractive',
+                'Bags_Under_Eyes', 'Bald', 'Bangs', 'Big_Lips', 'Big_Nose',
+                'Black_Hair', 'Blond_Hair', 'Blurry', 'Brown_Hair', 'Bushy_Eyebrows',
+                'Chubby', 'Double_Chin', 'Eyeglasses', 'Goatee', 'Gray_Hair',
+                'Heavy_Makeup', 'High_Cheekbones', 'Male', 'Mouth_Slightly_Open',
+                'Mustache', 'Narrow_Eyes', 'No_Beard', 'Oval_Face', 'Pale_Skin',
+                'Pointy_Nose', 'Receding_Hairline', 'Rosy_Cheeks', 'Sideburns',
+                'Smiling', 'Straight_Hair', 'Wavy_Hair', 'Wearing_Earrings',
+                'Wearing_Hat', 'Wearing_Lipstick', 'Wearing_Necklace',
+                'Wearing_Necktie', 'Young']
+        # init
+        self.photo_ids = df['image_id'].to_list()
+        self.root = root_path
+        self.classes = df.loc[:, cols]
+        self.num_classes = len(cols)
+        self.transform = transform.to('cuda')
+        self.inf = inf
+
+    def get_class(self, idx):
+        class_list = self.classes.iloc[idx].to_list()
+        cls_tensor = torch.from_numpy(np.array(class_list)).float()
+        del class_list
+        return cls_tensor
+
+    def __len__(self):
+        return len(self.photo_ids)
+
+    def __getitem__(self, idx):
+        try:
+            image = read_image(os.path.join(self.root, self.photo_ids[idx]))
+        except:
+            return self.__getitem__(idx)
+
+        target = self.get_class(idx)
+        if not self.inf:
+            return image, target
+        elif self.inf:
+            return image, target, self.paths[idx]
