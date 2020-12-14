@@ -9,6 +9,9 @@ from nets import sn_double_conv
 from nets import Block
 from nets import OptimizedBlock
 
+# 224 -> conv1(stride=2) or pool1(2) -> 112 -> conv2 -> 56 -> conv3 -> 28 -> conv4 -> 14 -> conv5 -> 7
+# 256 -> conv1(stride=2) or pool1(2) -> 128 -> conv2 -> 64 -> conv3 -> 32 -> conv4 -> 16 -> conv5 -> 8 -> conv6 -> 4 -> conv7 -> 2
+
 
 class SNDisc(nn.Module):
 
@@ -41,6 +44,45 @@ class SNDisc(nn.Module):
             out += torch.sum(e_c * x, dim=1, keepdim=True)
         # out = nn.Sigmoid(out)
         return [out, c1, c2, c3, c4]
+
+
+class SNDisc_(nn.Module):
+
+    def __init__(self, num_classes):
+        super().__init__()
+        self.conv1 = sn_double_conv(3, 64)
+        self.conv2 = sn_double_conv(64, 128)
+        self.conv3 = sn_double_conv(128, 256)
+        self.conv4 = sn_double_conv(256, 512)
+        self.conv5 = sn_double_conv(512, 1024)
+        [nn.init.xavier_uniform_(
+            getattr(self, 'conv{}'.format(i))[j].weight,
+            np.sqrt(2)
+            ) for i in range(1, 5) for j in range(2)]
+
+        self.l = nn.utils.spectral_norm(nn.Linear(1024, 1))
+        nn.init.xavier_uniform_(self.l.weight)
+
+        self.embed = nn.utils.spectral_norm(nn.Linear(num_classes, 1024, bias=True))
+        nn.init.xavier_uniform_(self.embed.weight)
+
+        self.activation = F.leaky_relu()
+
+    def forward(self, x, c=None):
+        c1 = self.conv1(x)
+        c2 = self.conv2(c1)
+        c3 = self.conv3(c2)
+        c4 = self.conv4(c3)
+        c5 = self.conv4(c4)
+        x = self.activation(c5)
+        x = torch.sum(x, [2, 3])  # global pool
+        out = self.l(x)
+        e_c = self.embed(c)
+        if c is not None:
+            out += torch.sum(e_c * x, dim=1, keepdim=True)
+        # out = nn.Sigmoid(out)
+        # return [out, c1, c2, c3, c4, c5]
+        return [out]
 
 
 # refarence code https://github.com/crcrpar/pytorch.sngan_projection 
