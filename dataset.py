@@ -35,6 +35,14 @@ class FlickrDataLoader(Dataset):
         self.class_id = class_id
         self.conditions = df.loc[:, columns]
         self.labels = df['condition']
+
+        df['orig_date_h'] = df['orig_date']
+        temp = df['orig_date_h'].str.split(':', expand=True)
+        temp = temp[0].str.split('T', expand=True)
+        df.orig_date_h = temp[1].astype(int)
+        del temp
+        self.time_list = df['orig_date_h'].to_list()
+
         self.cls_li = ['Clear', 'Clouds', 'Rain', 'Snow', 'Mist']
         self.num_classes = len(columns)
         # torch >= 1.7
@@ -55,6 +63,11 @@ class FlickrDataLoader(Dataset):
         sig_tensor = torch.from_numpy(np.array(sig)).float()
         del sig
         return sig_tensor
+
+    def get_time(self, idx):
+        time = self.time_list[idx]
+        time_ = int(time // 6)
+        return time_
 
     def __getitem__(self, idx):
 
@@ -247,15 +260,15 @@ class CelebALoader(Dataset):
     def __init__(self, root_path, df, transform=None, inf=False):
         # attributes
         self.cols = ['5_o_Clock_Shadow', 'Arched_Eyebrows', 'Attractive',
-                'Bags_Under_Eyes', 'Bald', 'Bangs', 'Big_Lips', 'Big_Nose',
-                'Black_Hair', 'Blond_Hair', 'Blurry', 'Brown_Hair', 'Bushy_Eyebrows',
-                'Chubby', 'Double_Chin', 'Eyeglasses', 'Goatee', 'Gray_Hair',
-                'Heavy_Makeup', 'High_Cheekbones', 'Male', 'Mouth_Slightly_Open',
-                'Mustache', 'Narrow_Eyes', 'No_Beard', 'Oval_Face', 'Pale_Skin',
-                'Pointy_Nose', 'Receding_Hairline', 'Rosy_Cheeks', 'Sideburns',
-                'Smiling', 'Straight_Hair', 'Wavy_Hair', 'Wearing_Earrings',
-                'Wearing_Hat', 'Wearing_Lipstick', 'Wearing_Necklace',
-                'Wearing_Necktie', 'Young']
+                     'Bags_Under_Eyes', 'Bald', 'Bangs', 'Big_Lips', 'Big_Nose',
+                     'Black_Hair', 'Blond_Hair', 'Blurry', 'Brown_Hair', 'Bushy_Eyebrows',
+                     'Chubby', 'Double_Chin', 'Eyeglasses', 'Goatee', 'Gray_Hair',
+                     'Heavy_Makeup', 'High_Cheekbones', 'Male', 'Mouth_Slightly_Open',
+                     'Mustache', 'Narrow_Eyes', 'No_Beard', 'Oval_Face', 'Pale_Skin',
+                     'Pointy_Nose', 'Receding_Hairline', 'Rosy_Cheeks', 'Sideburns',
+                     'Smiling', 'Straight_Hair', 'Wavy_Hair', 'Wearing_Earrings',
+                     'Wearing_Hat', 'Wearing_Lipstick', 'Wearing_Necklace',
+                     'Wearing_Necktie', 'Young']
         # init
         self.photo_ids = df['image_id'].to_list()
         self.root = root_path

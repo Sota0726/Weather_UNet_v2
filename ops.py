@@ -4,10 +4,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
+from sampler import ImbalancedDatasetSampler, TimeImbalancedDatasetSampler
 # import cupy as cp
 
-
-xp = np # cpu or gpu
+xp = np  # cpu or gpu
 # if os.environ.get('CUDA_VISIBLE_DEVICES') is not None: xp = cp
 
 
@@ -27,7 +27,7 @@ def l1_loss(a, b):
 
 
 def feat_loss(a, b):
-    return torch.mean(torch.stack([F.l1_loss(a_, b_) for a_,b_ in zip(a, b)]))
+    return torch.mean(torch.stack([F.l1_loss(a_, b_) for a_, b_ in zip(a, b)]))
 
 
 def uvIndex_loss(preds, labels):
@@ -36,19 +36,19 @@ def uvIndex_loss(preds, labels):
     return loss
 
 
-def pred_loss(preds, labels, cls='mse', weight=[1,2,1,1,1,1,1,1]):
-    if cls == 'CE':
+def pred_loss(preds, labels, l_type='mse', weight=[1,1,1,1,1,1,1,1]):
+    if l_type == 'CE':
         criterion = nn.CrossEntropyLoss()
         # one-hot to 0~4 label
         labels_ = torch.argmax(labels, dim=1)
         loss = criterion(preds, labels_)
-    elif cls == 'L1':
+    elif l_type == 'L1':
         criterion = nn.L1Loss()
         loss = criterion(preds, labels)
-    elif cls == 'weightedMSE':
+    elif l_type == 'weightedMSE':
         loss = torch.sum(weight * (preds - labels) ** 2)
         return loss
-    elif cls == 'BCE':
+    elif l_type == 'BCE':
         criterion = nn.BCEWithLogitsLoss()
         loss = criterion(preds, labels)
     else:
@@ -104,3 +104,32 @@ def make_table_img(images, ref_images, results):
     res_img = torch.cat([ref_img, in_out_img], dim=0)
 
     return res_img
+
+
+def make_dataloader(dataset, args):
+    if not args.sampler:
+        loader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=args.batch_size,
+            shuffle=True,
+            drop_last=True,
+            num_workers=args.num_workers)
+    elif args.sampler == 'time':
+        loader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=args.batch_size,
+            sampler=TimeImbalancedDatasetSampler(dataset),
+            drop_last=True,
+            num_workers=args.num_workers)
+    elif args.sampelr == 'condition':
+        loader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=args.batch_size,
+            sampler=ImbalancedDatasetSampler(dataset),
+            drop_last=True,
+            num_workers=args.num_workers)
+    else:
+        print('{} is invalid sampler name'.format(args.sampler))
+        exit()
+
+    return loader
