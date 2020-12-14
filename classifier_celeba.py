@@ -210,7 +210,7 @@ if __name__ == '__main__':
             global_step += 1
 
         if epoch % save_per_epoch == 0:
-            out_path = os.path.join(save_dir, 'resnet101_epoch' + str(epoch) + '_step' + str(global_step) + '.pt')
+            out_path = os.path.join(save_dir, '{}_epoch'.format(args.model) + str(epoch) + '_step' + str(global_step) + '.pt')
             torch.save(model, out_path)
 
     print('Done: training')
