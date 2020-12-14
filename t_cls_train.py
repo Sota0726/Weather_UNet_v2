@@ -10,11 +10,10 @@ parser.add_argument('--name', type=str, default='cUNet')
 parser.add_argument('--gpus', type=str, default='1')
 parser.add_argument('--save_dir', type=str, default='cp/transfer')
 parser.add_argument('--pkl_path', type=str,
-                    # default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp.pkl'
                     default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/outdoor_all_dbdate_wwo_weather_2016_17_delnoise_WoPerson_sky-10_L-05.pkl'
                     )
 parser.add_argument('--classifier_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/classifier/cls_res101-1119_I2W-train/resnet101_epoch15_step59312.pt'
+                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/classifier/cls_res101_1122_NotPreTrain/resnet101_epoch15_step59312.pt'
                     )
 parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--lr', type=float, default=1e-4)
@@ -22,15 +21,17 @@ parser.add_argument('--lmda', type=float, default=None)
 parser.add_argument('--num_epoch', type=int, default=150)
 parser.add_argument('--batch_size', '-bs', type=int, default=24)
 parser.add_argument('--num_workers', type=int, default=8)
-parser.add_argument('--image_only', action='store_true')
 parser.add_argument('--GD_train_ratio', type=int, default=8)
-parser.add_argument('--sampler', action='store_true')
+parser.add_argument('--sampler', default='condition')
 parser.add_argument('--loss_lamda_cw', '-lm', type=float, nargs=2, default=[1, 1])
 parser.add_argument('-b1', '--adam_beta1', type=float, default=0.5)
 parser.add_argument('-b2', '--adam_beta2', type=float, default=0.9)
+parser.add_argument('-e', '--epsilon', type=float, default=1e-2)
 parser.add_argument('--amp', action='store_true')
 parser.add_argument('--multi_gpu', action='store_true')
-parser.add_argument('--weather_loss', type=str, default='CE')
+parser.add_argument('-wt', '--wloss_type', type=str, default='mse')
+parser.add_argument('-g', '--generator', type=str, default='cUNet')
+parser.add_argument('-d', '--disc', type=str, default='SNDisc')
 args = parser.parse_args()
 # args = parser.parse_args(args=['--gpu', '3', '--sampler', '--name', 'debug'])
 
@@ -61,8 +62,8 @@ if args.amp:
 from ops import *
 from dataset import ImageLoader, FlickrDataLoader
 from sampler import ImbalancedDatasetSampler
-from cunet import Conditional_UNet
-from disc import SNDisc
+from cunet import Conditional_UNet, Conditional_UNet_V2
+from disc import SNDisc, SNDisc_, SNResNet64ProjectionDiscriminator, SNResNetProjectionDiscriminator
 from utils import MakeOneHot
 
 
@@ -118,33 +119,24 @@ class WeatherTransfer(object):
         self.num_classes = len(['Clear', 'Clouds', 'Rain', 'Snow', 'Mist'])
 
         self.transform = {'train': train_transform, 'test': test_transform}
-        self.train_set, self.test_set = self.load_data(varbose=True, image_only=args.image_only)
+        self.train_set, self.test_set = self.load_data(varbose=True)
 
         self.build()
 
-    def load_data(self, varbose=False, image_only=False, train_data_rate=0.7):
+    def load_data(self, varbose=False):
         args = self.args
         print('Start loading image files...')
 
-        if not image_only:
-            df = pd.read_pickle(args.pkl_path)
-            print('loaded {} data'.format(len(df)))
-            df_shuffle = df.sample(frac=1)
-            # df_sep = {'train': df_shuffle[df_shuffle['mode'] == 't_train'],
-            #           'test': df_shuffle[df_shuffle['mode'] == 'test']}
-            df_sep = {'train': df_shuffle[(df_shuffle['mode'] == 't_train') | (df_shuffle['mode'] == 'train')],
-                      'test': df_shuffle[df_shuffle['mode'] == 'test']}
-            del df, df_shuffle
-            print(df_sep['train'].condition.value_counts())
-            loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], self.cols, transform=self.transform[s], class_id=True)
-
-        else:
-            print('image loader')
-            paths = glob(os.path.join(args.image_root, '*'))
-            print('loaded {} data'.format(len(paths)))
-            pivot = int(len(paths) * train_data_rate)
-            paths_sep = {'train': paths[:pivot], 'test': paths[pivot:]}
-            loader = lambda s: ImageLoader(paths_sep[s], transform=self.transform[s])
+        df = pd.read_pickle(args.pkl_path)
+        print('loaded {} data'.format(len(df)))
+        df_shuffle = df.sample(frac=1)
+        # df_sep = {'train': df_shuffle[df_shuffle['mode'] == 't_train'],
+        #           'test': df_shuffle[df_shuffle['mode'] == 'test']}
+        df_sep = {'train': df_shuffle[(df_shuffle['mode'] == 't_train') | (df_shuffle['mode'] == 'train')],
+                    'test': df_shuffle[df_shuffle['mode'] == 'test']}
+        del df, df_shuffle
+        print(df_sep['train'].condition.value_counts())
+        loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], self.cols, transform=self.transform[s], class_id=True)
 
         train_set = loader('train')
         test_set = loader('test')
@@ -158,8 +150,25 @@ class WeatherTransfer(object):
 
         # Models
         print('Build Models...')
-        self.inference = Conditional_UNet(num_classes=self.num_classes)
-        self.discriminator = SNDisc(num_classes=self.num_classes)
+        if args.generator == 'cUNet':
+            self.inference = Conditional_UNet(num_classes=self.num_classes)
+        elif args.generator == 'cUNetV2':
+            self.inference = Conditional_UNet_V2(num_classes=self.num_classes)
+        else:
+            print('{} is invalid generator'.format(args.generator))
+            exit()
+
+        if args.disc == 'SNDisc':
+            self.discriminator = SNDisc(num_classes=self.num_classes)
+        elif args.disc == 'SNDiscV2':
+            self.discriminator = SNDisc_(num_classes=self.num_classes)
+        elif args.disc == 'SNRes64':
+            self.discriminator = SNResNet64ProjectionDiscriminator(num_classes=self.num_classes)
+        elif args.disc == 'SNRes':
+            self.discriminator = SNResNetProjectionDiscriminator(num_classes=self.num_classes)
+        else:
+            print('{} is invalid discriminator'.format(args.disc))
+            exit()
 
         exist_cp = sorted(glob(os.path.join(args.save_dir, self.name, '*')))
         if len(exist_cp) != 0:
@@ -196,44 +205,19 @@ class WeatherTransfer(object):
             self.discriminator = nn.DataParallel(self.discriminator)
             self.classifier = nn.DataParallel(self.classifier)
 
-        self.train_loader = torch.utils.data.DataLoader(
-                self.train_set,
-                batch_size=args.batch_size,
-                shuffle=True,
-                drop_last=True,
-                num_workers=args.num_workers)
+        self.random_loader = make_dataloader(self.train_set, args)
+        args.sampler = False
+        self.train_loader = make_dataloader(self.train_set, args)
+        self.test_loader = make_dataloader(self.test_set, args)
 
-        if args.sampler:
-            self.random_loader = torch.utils.data.DataLoader(
-                self.train_set,
-                batch_size=args.batch_size,
-                sampler=ImbalancedDatasetSampler(self.train_set),
-                drop_last=True,
-                num_workers=args.num_workers)
-        else:
-            self.random_loader = torch.utils.data.DataLoader(
-                    self.train_set,
-                    batch_size=args.batch_size,
-                    shuffle=True,
-                    drop_last=True,
-                    num_workers=args.num_workers)
-
-        if not args.image_only:
-            self.test_loader = torch.utils.data.DataLoader(
-                    self.test_set,
-                    batch_size=self.batch_size,
-                    # shuffle=True,
-                    sampler=ImbalancedDatasetSampler(self.test_set),
-                    drop_last=True,
-                    num_workers=args.num_workers)
-            test_data_iter = iter(self.test_loader)
-
-            self.test_random_sample = []
-            for i in range(2):
-                img, label = test_data_iter.next()
-                img = self.test_set.transform(img.to('cuda:0'))
-                self.test_random_sample.append((img, label.to('cuda:0')))
-            del test_data_iter, self.test_loader
+        test_data_iter = iter(self.test_loader)
+        # torch >= 1.7
+        self.test_random_sample = []
+        for i in range(2):
+            img, label = test_data_iter.next()
+            img = self.test_set.transform(img.to('cuda:0'))
+            self.test_random_sample.append((img, label.to('cuda:0')))
+        del test_data_iter, self.test_loader
 
         self.scalar_dict = {}
         self.image_dict = {}
@@ -247,13 +231,11 @@ class WeatherTransfer(object):
         # for real
         pred_labels = self.classifier(images).detach()
         # --- master --- #
-        pred_labels = F.softmax(pred_labels, dim=1)
-        ep = 1e-7
+        # pred_labels = F.softmax(pred_labels, dim=1)
         # -------------- #
         # --- experiment1 --- #
         # one-hot
-        # pred_labels = torch.eye(self.num_classes)[torch.argmax(pred_labels, dim=1)].to('cuda:0')
-        # ep = 1e-2
+        pred_labels = torch.eye(self.num_classes)[torch.argmax(pred_labels, dim=1)].to('cuda:0')
         # ------------------- #
 
         fake_out = self.inference(images, r_labels)
@@ -262,19 +244,19 @@ class WeatherTransfer(object):
         # fake_feat = fake_res[3]
         fake_c_out = self.classifier(fake_out)
 
-        if self.args.weather_loss != 'CE':
+        if self.args.wloss_type != 'CE':
             fake_c_out = F.softmax(fake_c_out, dim=1)
 
         # Calc Generator Loss
         g_loss_adv = gen_hinge(fake_d_out)  # Adversarial loss
         g_loss_l1 = l1_loss(fake_out, images)
-        g_loss_w = pred_loss(fake_c_out, r_labels, cls=self.args.weather_loss)   # Weather prediction
+        g_loss_w = pred_loss(fake_c_out, r_labels, l_type=self.args.wloss_type)   # Weather prediction
 
         # abs_loss = torch.mean(torch.abs(fake_out - images), [1, 2, 3])
 
         diff = torch.mean(torch.abs(fake_out - images), [1, 2, 3])
         lmda = torch.mean(torch.abs(pred_labels - r_labels), 1)
-        loss_con = torch.mean(diff / (lmda + ep))  # Reconstraction loss
+        loss_con = torch.mean(diff / (lmda + self.args.epsilon))  # Reconstraction loss
 
         lmda_con, lmda_w = tuple(self.args.loss_lamda_cw)
 
@@ -311,18 +293,17 @@ class WeatherTransfer(object):
         # for real
         pred_labels = self.classifier(images).detach()
         # --- master --- #
-        pred_labels = F.softmax(pred_labels, dim=1)
+        # pred_labels = F.softmax(pred_labels, dim=1)
         # -------------- #
         # --- experiment1 --- #
         # one-hot
-        # pred_labels = torch.eye(self.num_classes)[torch.argmax(pred_labels, dim=1)].to('cuda:0')
+        pred_labels = torch.eye(self.num_classes)[torch.argmax(pred_labels, dim=1)].to('cuda:0')
         # ------------------- #
 
         real_d_out_pred = self.discriminator(images, pred_labels)[0]
 
         # for fake
         fake_out = self.inference(images, r_labels)
-
         fake_d_out = self.discriminator(fake_out.detach(), r_labels)[0]
 
         d_loss = dis_hinge(fake_d_out, real_d_out_pred)
@@ -364,7 +345,7 @@ class WeatherTransfer(object):
                 ref_labels_expand = torch.cat([ref_labels[i]] * self.batch_size).view(-1, self.num_classes)
                 fake_out_ = self.inference(images, ref_labels_expand)
                 fake_c_out_ = self.classifier(fake_out_)
-                if self.args.weather_loss != 'CE':
+                if self.args.wloss_type != 'CE':
                     fake_c_out_ = F.softmax(fake_c_out_, dim=1)
                 # fake_d_out_ = self.discriminator(fake_out_, labels)[0]
                 real_d_out_ = self.discriminator(images, labels)[0]
@@ -378,7 +359,7 @@ class WeatherTransfer(object):
             # g_loss_adv_.append(adv_loss(fake_d_out_, self.real).item())
             g_loss_adv_.append(gen_hinge(fake_d_out_).item())
             g_loss_l1_.append(l1_loss(fake_out_, images).item())
-            g_loss_w_.append(pred_loss(fake_c_out_, ref_labels_expand).item())
+            g_loss_w_.append(pred_loss(fake_c_out_, ref_labels_expand, l_type=self.args.wloss_type).item())
             d_loss_.append(dis_hinge(fake_d_out_, real_d_out_).item())
             # loss_con_.append(torch.mean(diff / (lmda + 1e-7).item())
 
@@ -480,7 +461,7 @@ class WeatherTransfer(object):
                 tqdm_iter.set_postfix(OrderedDict(d_loss=d_loss, g_loss=g_loss, r_loss=r_loss, w_loss=w_loss))
 
                 # --- EVALUATION ---#
-                if (self.global_step % eval_per_step == 0) and not args.image_only:
+                if (self.global_step % eval_per_step == 0):
                     self.evaluation()
 
                 # --- UPDATE SUMMARY ---#

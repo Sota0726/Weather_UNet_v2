@@ -20,9 +20,13 @@ parser.add_argument('--num_workers', type=int, default=8)
 parser.add_argument('--GD_train_ratio', type=int, default=8)
 parser.add_argument('-b1', '--adam_beta1', type=float, default=0.5)
 parser.add_argument('-b2', '--adam_beta2', type=float, default=0.9)
+parser.add_argument('-e', '--epsilon', type=float, default=1e-2)
 parser.add_argument('--amp', action='store_true')
 parser.add_argument('--multi_gpu', action='store_true')
 parser.add_argument('--attr_loss', type=str, default='BCE')
+parser.add_argument('-g', '--generator', type=str, default='cUNet')
+parser.add_argument('-d', '--disc', type=str, default='SNDisc')
+parser.add_argument('--supervised', action='store_true')
 args = parser.parse_args()
 # args = parser.parse_args(args=['--gpu', '3', '--sampler', '--name', 'debug'])
 
@@ -52,8 +56,8 @@ if args.amp:
 
 from ops import *
 from dataset import CelebALoader
-from cunet import Conditional_UNet
-from disc import SNDisc
+from cunet import Conditional_UNet, Conditional_UNet_V2
+from disc import SNDisc, SNDisc_, SNResNet64ProjectionDiscriminator, SNResNetProjectionDiscriminator
 from utils import MakeOneHot
 
 
@@ -67,9 +71,9 @@ class WeatherTransfer(object):
             print('set batch size multiple of 8')
         self.global_step = 0
 
-        self.name = 'CelebA_{}_loss_{}_b1-{}_b2-{}_GDratio-{}_amp-{}_MGpu-{}'.format(self.args.name,
-                                                                                        self.args.attr_loss, self.args.adam_beta1, self.args.adam_beta2,
-                                                                                        self.args.GD_train_ratio, self.args.amp, self.args.multi_gpu)
+        self.name = 'CelebA_{}_D-{}_loss_{}_b1-{}_b2-{}_GDratio-{}'.format(self.args.name, self.args.disc,
+                                                                    self.args.attr_loss, self.args.adam_beta1, self.args.adam_beta2,
+                                                                    self.args.GD_train_ratio, self.args.amp, self.args.multi_gpu)
 
         comment = '_lr-{}*{}_bs-{}_ne-{}'.format(str((args.batch_size / 16)), self.args.lr, self.args.batch_size, self.args.num_epoch)
 
@@ -87,7 +91,6 @@ class WeatherTransfer(object):
         train_transform = nn.Sequential(
             transforms.Resize((args.input_size,) * 2),
             transforms.RandomRotation(10),
-            # transforms.RandomResizedCrop(args.input_size),
             transforms.RandomHorizontalFlip(),
             transforms.ColorJitter(
                     brightness=0.5,
@@ -136,8 +139,25 @@ class WeatherTransfer(object):
 
         # Models
         print('Build Models...')
-        self.inference = Conditional_UNet(num_classes=self.num_classes)
-        self.discriminator = SNDisc(num_classes=self.num_classes)
+        if args.generator == 'cUNet':
+            self.inference = Conditional_UNet(num_classes=self.num_classes)
+        elif args.generator == 'cUNetV2':
+            self.inference = Conditional_UNet_V2(num_classes=self.num_classes)
+        else:
+            print('{} is invalid generator'.format(args.generator))
+            exit()
+
+        if args.disc == 'SNDisc':
+            self.discriminator = SNDisc(num_classes=self.num_classes)
+        elif args.disc == 'SNDiscV2':
+            self.discriminator = SNDisc_(num_classes=self.num_classes)
+        elif args.disc == 'SNRes64':
+            self.discriminator = SNResNet64ProjectionDiscriminator(num_classes=self.num_classes)
+        elif args.disc == 'SNRes':
+            self.discriminator = SNResNetProjectionDiscriminator(num_classes=self.num_classes)
+        else:
+            print('{} is invalid discriminator'.format(args.disc))
+            exit()
 
         exist_cp = sorted(glob(os.path.join(args.save_dir, self.name, '*')))
         if len(exist_cp) != 0:
@@ -174,28 +194,13 @@ class WeatherTransfer(object):
             self.discriminator = nn.DataParallel(self.discriminator)
             self.classifier = nn.DataParallel(self.classifier)
 
-        self.train_loader = torch.utils.data.DataLoader(
-                self.train_set,
-                batch_size=args.batch_size,
-                shuffle=True,
-                drop_last=True,
-                num_workers=args.num_workers)
+        self.random_loader = make_dataloader(self.train_set, args)
+        args.sampler = False
+        self.train_loader = make_dataloader(self.train_set, args)
+        self.test_loader = make_dataloader(self.test_set, args)
 
-        self.random_loader = torch.utils.data.DataLoader(
-                self.train_set,
-                batch_size=args.batch_size,
-                shuffle=True,
-                drop_last=True,
-                num_workers=args.num_workers)
-
-        self.test_loader = torch.utils.data.DataLoader(
-                self.test_set,
-                batch_size=self.batch_size,
-                shuffle=True,
-                drop_last=True,
-                num_workers=args.num_workers)
         test_data_iter = iter(self.test_loader)
-
+        # torch >= 1.7
         self.test_random_sample = []
         for i in range(2):
             img, label = test_data_iter.next()
@@ -213,9 +218,11 @@ class WeatherTransfer(object):
         # --- UPDATE(Inference) --- #
         self.g_opt.zero_grad()
         # for real
-        pred_labels = self.classifier(images).detach()
-        pred_labels = torch.sigmoid(pred_labels)
-        ep = 1e-7
+        if self.args.supervised:
+            pred_labels = labels
+        else:
+            pred_labels = self.classifier(images).detach()
+            pred_labels = torch.sigmoid(pred_labels)
 
         fake_out = self.inference(images, r_labels)
         fake_res = self.discriminator(fake_out, r_labels)
@@ -226,13 +233,13 @@ class WeatherTransfer(object):
         # Calc Generator Loss
         g_loss_adv = gen_hinge(fake_d_out)  # Adversarial loss
         g_loss_l1 = l1_loss(fake_out, images)
-        g_loss_w = pred_loss(fake_c_out, r_labels, cls=self.args.attr_loss)   # Weather prediction
+        g_loss_w = pred_loss(fake_c_out, r_labels, l_type=self.args.attr_loss)   # Weather prediction
 
         # abs_loss = torch.mean(torch.abs(fake_out - images), [1, 2, 3])
 
         diff = torch.mean(torch.abs(fake_out - images), [1, 2, 3])
         lmda = torch.mean(torch.abs(pred_labels - r_labels), 1)
-        loss_con = torch.mean(diff / (lmda + ep))  # Reconstraction loss
+        loss_con = torch.mean(diff / (lmda + self.args.epsilon))  # Reconstraction loss
 
         lmda_con, lmda_w = (1, 1)
 
@@ -267,8 +274,11 @@ class WeatherTransfer(object):
         self.d_opt.zero_grad()
 
         # for real
-        pred_labels = self.classifier(images).detach()
-        pred_labels = torch.sigmoid(pred_labels)
+        if self.args.supervised:
+            pred_labels = labels
+        else:
+            pred_labels = self.classifier(images).detach()
+            pred_labels = torch.sigmoid(pred_labels)
         # ------------------- #
 
         real_d_out_pred = self.discriminator(images, pred_labels)[0]
@@ -324,7 +334,7 @@ class WeatherTransfer(object):
             # g_loss_adv_.append(adv_loss(fake_d_out_, self.real).item())
             g_loss_adv_.append(gen_hinge(fake_d_out_).item())
             g_loss_l1_.append(l1_loss(fake_out_, images).item())
-            g_loss_w_.append(pred_loss(fake_c_out_, ref_labels_expand).item())
+            g_loss_w_.append(pred_loss(fake_c_out_, ref_labels_expand, l_type=self.args.attr_loss).item())
             d_loss_.append(dis_hinge(fake_d_out_, real_d_out_).item())
             # loss_con_.append(torch.mean(diff / (lmda + 1e-7).item())
 
@@ -404,20 +414,6 @@ class WeatherTransfer(object):
 
                 if images.size(0) != self.batch_size:
                     continue
-
-                # --- LABEL PREPROCESS --- #
-                # rand_labels = self.classifier(rand_images).detach()
-                # --- master --- #
-                # rand_labels = F.softmax(rand_labels, dim=1)
-                # -------------- #
-                # --- experiment1 --- #
-                # one-hot
-                # rand_labels = torch.eye(self.num_classes)[torch.argmax(rand_labels, dim=1)].to('cuda:0')
-                # ------------------- #
-                # --- experiment2 --- #
-                # rand_labels = torch.eye(self.num_classes)[r_con].to('cuda:0')  # rand_labels:one_hot, r_con:label[0~4]
-                # ------------------- #
-                # labels = torch.eye(self.num_classes)[con].to('cuda:0')
 
                 # --- TRAINING --- #
                 if (self.global_step - 1) % args.GD_train_ratio == 0:
