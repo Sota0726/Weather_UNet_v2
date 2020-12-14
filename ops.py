@@ -45,15 +45,12 @@ def pred_loss(preds, labels, cls='mse', weight=[1,2,1,1,1,1,1,1]):
     elif cls == 'L1':
         criterion = nn.L1Loss()
         loss = criterion(preds, labels)
-<<<<<<< HEAD
     elif cls == 'weightedMSE':
         loss = torch.sum(weight * (preds - labels) ** 2)
         return loss
-=======
     elif cls == 'BCE':
         criterion = nn.BCEWithLogitsLoss()
         loss = criterion(preds, labels)
->>>>>>> d434fe7c068f2d126463955b1615e58f012e6d16
     else:
         criterion = nn.MSELoss()
         loss = criterion(preds, labels)
