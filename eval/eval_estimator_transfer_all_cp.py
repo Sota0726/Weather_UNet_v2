@@ -25,7 +25,7 @@ parser.add_argument('--estimator_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/estimator/'
                             '1209_est_res101_val_WoPerson_ss-10_L05/est_resnet101_15_step62240.pt')
 parser.add_argument('--input_size', type=int, default=224)
-parser.add_argument('--batch_size', type=int, default=5)
+parser.add_argument('--batch_size', type=int, default=20)
 parser.add_argument('--num_workers', type=int, default=8)
 args = parser.parse_args()
 

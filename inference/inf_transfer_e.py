@@ -16,16 +16,13 @@ parser.add_argument('--image_root', type=str,
                     default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017')
 parser.add_argument('--pkl_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/outdoor_all_dbdate_wwo_weather_2016_17_delnoise_WoPerson_sky-10_L-05_50testImgs.pkl')
-# parser.add_argument('--output_dir', '-o', type=str,
-#                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/results/eval_est_transfer/'
-#                     'cUNet_w-e_res101-0408_train-D1T1_adam_b1-00_aug_wloss-mse_train200k-test500/e23_322k')
 parser.add_argument('--cp_path', type=str,
                     default='cp/transfer/1204_cUNet_w-e_res101-1203L05e15_SNDisc_sampler-False_GDratio1-8_adam-b10.5-b20.9_lr-0.0001_bs-24_ne-150/cUNet_est_e0110_s1168000.pt')
 parser.add_argument('--estimator_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/estimator/'
                     'est_res101-1203_sampler_pre_WoPerson_sky-10_L-05/est_resnet101_15_step62240.pt')
 parser.add_argument('--input_size', type=int, default=224)
-parser.add_argument('--batch_size', type=int, default=5)
+parser.add_argument('--batch_size', type=int, default=10)
 parser.add_argument('--num_workers', type=int, default=8)
 parser.add_argument('--image_only', action='store_true')
 args = parser.parse_args()
@@ -87,11 +84,11 @@ if __name__ == '__main__':
             )
     random_loader = torch.utils.data.DataLoader(
             dataset,
-            sampler=ImbalancedDatasetSampler(dataset),
+            # sampler=ImbalancedDatasetSampler(dataset),
             batch_size=args.batch_size,
             num_workers=args.num_workers,
-            drop_last=True
-            # shuffle=True
+            drop_last=True,
+            shuffle=True
             )
 
     # load model
@@ -111,7 +108,7 @@ if __name__ == '__main__':
 
     save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'est',
                              args.cp_path.split('/')[-2],
-                             'e' + args.cp_path.split('/')[-1].split('_')[-2])
+                             args.cp_path.split('/')[-1].split('.pt')[0], '50x50')
     os.makedirs(save_path, exist_ok=True)
     for k, (data, rnd) in tqdm(enumerate(zip(loader, random_loader)), total=len(df_sep)//bs):
         batch = data[0].to('cuda')
