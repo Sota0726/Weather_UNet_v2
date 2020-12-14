@@ -20,7 +20,7 @@ parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--lmda', type=float, default=None)
 parser.add_argument('--num_epoch', type=int, default=150)
-parser.add_argument('--batch_size', '-bs', type=int, default=24)
+parser.add_argument('--batch_size', '-bs', type=int, default=16)
 parser.add_argument('--num_workers', type=int, default=8)
 parser.add_argument('--GD_train_ratio', type=int, default=8)
 parser.add_argument('--sampler', action='store_true')
@@ -30,8 +30,8 @@ parser.add_argument('-b1', '--adam_beta1', type=float, default=0.5)
 parser.add_argument('-b2', '--adam_beta2', type=float, default=0.9)
 parser.add_argument('--amp', action='store_true')
 parser.add_argument('--multi_gpu', action='store_true')
-args = parser.parse_args()
-# args = parser.parse_args(args=['--name', 'debug'])
+# args = parser.parse_args()
+args = parser.parse_args(args=['--name', 'debug', '--gpu', '1', '--resume_cp', '/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/transfer/est/1204_cUNet_w-e_res101-1203L05e15_SNDisc_sampler-False_GDratio1-8_adam-b10.5-b20.9_lr-0.0001_bs-24_ne-150/cUNet_est_e0134_s1432000.pt'])
 
 # GPU Setting
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
@@ -60,7 +60,7 @@ from ops import *
 from dataset import ImageLoader, FlickrDataLoader
 from sampler import ImbalancedDatasetSampler
 from cunet import Conditional_UNet
-from disc import SNResNet64ProjectionDiscriminator
+from disc import SNDisc
 
 
 class WeatherTransfer(object):
@@ -161,7 +161,7 @@ class WeatherTransfer(object):
         print('Build Models...')
 
         self.inference = Conditional_UNet(num_classes=self.num_classes)
-        self.discriminator = SNResNet64ProjectionDiscriminator(num_classes=self.num_classes)
+        self.discriminator = SNDisc(num_classes=self.num_classes)
 
         if args.resume_cp:
             exist_cp = [args.resume_cp]
