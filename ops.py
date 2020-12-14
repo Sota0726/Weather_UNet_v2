@@ -39,6 +39,9 @@ def pred_loss(preds, labels, cls='mse'):
     elif cls == 'L1':
         criterion = nn.L1Loss()
         loss = criterion(preds, labels)
+    elif cls == 'BCE':
+        criterion = nn.BCEWithLogitsLoss()
+        loss = criterion(preds, labels)
     else:
         criterion = nn.MSELoss()
         loss = criterion(preds, labels)
