@@ -30,7 +30,13 @@ def feat_loss(a, b):
     return torch.mean(torch.stack([F.l1_loss(a_, b_) for a_,b_ in zip(a, b)]))
 
 
-def pred_loss(preds, labels, cls='mse'):
+def uvIndex_loss(preds, labels):
+    criterion = nn.MSELoss()
+    loss = criterion(preds[:, 1] - labels[:, 1])
+    return loss
+
+
+def pred_loss(preds, labels, cls='mse', weight=[1,2,1,1,1,1,1,1]):
     if cls == 'CE':
         criterion = nn.CrossEntropyLoss()
         # one-hot to 0~4 label
@@ -39,6 +45,9 @@ def pred_loss(preds, labels, cls='mse'):
     elif cls == 'L1':
         criterion = nn.L1Loss()
         loss = criterion(preds, labels)
+    elif cls == 'weightedMSE':
+        loss = torch.sum(weight * (preds - labels) ** 2)
+        return loss
     else:
         criterion = nn.MSELoss()
         loss = criterion(preds, labels)
