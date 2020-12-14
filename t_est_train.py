@@ -28,7 +28,7 @@ parser.add_argument('--resume_cp', type=str)
 parser.add_argument('-b1', '--adam_beta1', type=float, default=0.5)
 parser.add_argument('-b2', '--adam_beta2', type=float, default=0.9)
 parser.add_argument('-e', '--epsilon', type=float, default=1e-7)
-parser.add_argument('-ww', '--wloss_weight', type=list, default=[1,2,1,1,1,1,1,1])
+parser.add_argument('-ww', '--wloss_weight', type=int, nargs=8, default=[1,1,1,1,1,1,1,1])
 parser.add_argument('-wt', '--wloss_type', type=str, default='mse')
 parser.add_argument('--amp', action='store_true')
 parser.add_argument('--multi_gpu', action='store_true')
@@ -75,8 +75,8 @@ class WeatherTransfer(object):
         self.batch_size = args.batch_size
         self.global_step = 0
 
-        self.name = '{}_sampler-{}_GDratio{}_adam-b1{}-b2{}_ep{}'.format(args.name, args.sampler, '1-' + str(args.GD_train_ratio),
-                                                                    args.adam_beta1, args.adam_beta2, args.epsilon)
+        self.name = 'D-{}_{}_sampler-{}_GDratio{}_adam-b1{}-b2{}_ep{}'.format(args.name, args.disc, args.sampler, '1-' + str(args.GD_train_ratio),
+                                                                              args.adam_beta1, args.adam_beta2, args.epsilon)
 
         comment = '_lr-{}_bs-{}_ne-{}'.format(args.lr, args.batch_size, args.num_epoch)
 
@@ -351,7 +351,7 @@ class WeatherTransfer(object):
             fake_out_li.append(fake_out_)
             g_loss_adv_.append(gen_hinge(fake_d_out_).item())
             g_loss_l1_.append(l1_loss(fake_out_, images).item())
-            g_loss_w_.append(pred_loss(fake_c_out_, ref_labels_expand).item())
+            g_loss_w_.append(pred_loss(fake_c_out_, ref_labels_expand, l_type=self.args.wloss_type, weight=self.args.wloss_weight).item())
             d_loss_.append(dis_hinge(fake_d_out_, real_d_out_).item())
             # loss_con_.append(torch.mean(diff / (lmda + 1e-7).item())
 
@@ -385,8 +385,8 @@ class WeatherTransfer(object):
         args = self.args
 
         # train setting
-        eval_per_step = 1 * args.GD_train_ratio
-        display_per_step = 1 * args.GD_train_ratio
+        eval_per_step = 1000 * args.GD_train_ratio
+        display_per_step = 1000 * args.GD_train_ratio
 
         self.all_step = args.num_epoch * len(self.train_set) // self.batch_size
 
