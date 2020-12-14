@@ -50,6 +50,15 @@ def BN_r_double_conv(in_channels, out_channels):
     )
 
 
+def fc_x2(in_channels, out_channels):
+    return nn.Sequential(
+        nn.Linear(in_channels, out_channels, bias=True),
+        nn.LeakyReLU(0.2, inplace=True),
+        nn.Linear(out_channels, out_channels, bias=True),
+        nn.LeakyReLU(0.2, inplace=True)
+    )
+
+
 def IN_r_double_conv(in_channels, out_channels):
     return nn.Sequential(
         nn.Conv2d(in_channels, out_channels, 3, padding=1),
