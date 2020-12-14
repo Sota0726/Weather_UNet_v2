@@ -27,6 +27,7 @@ parser.add_argument('--attr_loss', type=str, default='BCE')
 parser.add_argument('-g', '--generator', type=str, default='cUNet')
 parser.add_argument('-d', '--disc', type=str, default='SNDisc')
 parser.add_argument('--supervised', action='store_true')
+parser.add_argument('--sampler', action='store_true')
 args = parser.parse_args()
 # args = parser.parse_args(args=['--gpu', '3', '--sampler', '--name', 'debug'])
 

@@ -66,16 +66,13 @@ class SNDisc_(nn.Module):
         self.embed = nn.utils.spectral_norm(nn.Linear(num_classes, 1024, bias=True))
         nn.init.xavier_uniform_(self.embed.weight)
 
-        self.activation = F.leaky_relu()
-
     def forward(self, x, c=None):
         c1 = self.conv1(x)
         c2 = self.conv2(c1)
         c3 = self.conv3(c2)
         c4 = self.conv4(c3)
-        c5 = self.conv4(c4)
-        x = self.activation(c5)
-        x = torch.sum(x, [2, 3])  # global pool
+        c5 = self.conv5(c4)
+        x = torch.sum(c5, [2, 3])  # global pool
         out = self.l(x)
         e_c = self.embed(c)
         if c is not None:
