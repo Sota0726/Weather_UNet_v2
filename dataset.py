@@ -246,7 +246,7 @@ class TransientAttributes(Dataset):
 class CelebALoader(Dataset):
     def __init__(self, root_path, df, transform=None, inf=False):
         # attributes
-        cols = ['5_o_Clock_Shadow', 'Arched_Eyebrows', 'Attractive',
+        self.cols = ['5_o_Clock_Shadow', 'Arched_Eyebrows', 'Attractive',
                 'Bags_Under_Eyes', 'Bald', 'Bangs', 'Big_Lips', 'Big_Nose',
                 'Black_Hair', 'Blond_Hair', 'Blurry', 'Brown_Hair', 'Bushy_Eyebrows',
                 'Chubby', 'Double_Chin', 'Eyeglasses', 'Goatee', 'Gray_Hair',
@@ -259,8 +259,8 @@ class CelebALoader(Dataset):
         # init
         self.photo_ids = df['image_id'].to_list()
         self.root = root_path
-        self.classes = df.loc[:, cols]
-        self.num_classes = len(cols)
+        self.classes = df.loc[:, self.cols]
+        self.num_classes = len(self.cols)
         self.transform = transform.to('cuda')
         self.inf = inf
 
