@@ -3,6 +3,7 @@ import os
 import torch
 import torch.nn as nn
 import torchvision.transforms.functional as F
+from nets import fc_x2
 
 class ConditionalNorm(nn.Module):
     def __init__(self, in_channel, num_classes=5):
@@ -47,6 +48,38 @@ class AdaIN(nn.Module):
         y_ = self.l1(y).view(bs, ch, -1)
         x_std, x_mean = self.c_norm(x_, bs, ch, eps=self.eps)
         y_std, y_mean = self.c_norm(y_, bs, ch, eps=self.eps)
+        out = ((x - x_mean.expand(size)) / x_std.expand(size)) \
+                * y_std.expand(size) + y_mean.expand(size)
+        return out
+
+
+class AdaIN_v2(nn.Module):
+    def __init__(self, in_channel, num_classes, eps=1e-5):
+        super().__init__()
+        self.num_classes = num_classes
+        self.eps = eps
+        self.fc2 = fc_x2(num_classes, 512) # bias is good :)
+        self.fc4 = fc_x2(512, 2)
+        # self.emb = nn.Embedding(num_classes, num_classes)
+
+    def c_norm(self, x, bs, ch, eps=1e-7):
+        # assert isinstance(x, torch.cuda.FloatTensor)
+        assert isinstance(x, torch.cuda.FloatTensor) or isinstance(x, torch.cuda.HalfTensor)
+        x_var = x.var(dim=-1) + eps
+        x_std = x_var.sqrt().view(bs, ch, 1, 1)
+        x_mean = x.mean(dim=-1).view(bs, ch, 1, 1)
+        return x_std, x_mean
+
+    def forward(self, x, y):
+        assert x.size(0) == y.size(0)
+        size = x.size()
+        bs, ch = size[:2]
+        x_ = x.view(bs, ch, -1)
+        y_ = self.fc2(y)
+        y_ = self.fc4(y_)
+        x_std, x_mean = self.c_norm(x_, bs, ch, eps=self.eps)
+        y_std, = y_[:, 0]
+        y_mean = y_[:, 1]
         out = ((x - x_mean.expand(size)) / x_std.expand(size)) \
                 * y_std.expand(size) + y_mean.expand(size)
         return out
