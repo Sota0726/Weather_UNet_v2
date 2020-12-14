@@ -9,6 +9,7 @@ import pandas as pd
 from PIL import Image
 from tqdm import trange, tqdm
 from torchvision.utils import save_image
+import matplotlib.pyplot as plt
 
 from sklearn.metrics import classification_report, confusion_matrix
 import seaborn as sns
@@ -17,19 +18,18 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=str)
 parser.add_argument('--pkl_path', type=str,
                     default='/mnt/fs2/2019/okada/from_nitta/parm_0.3/50test_high-consis_10images-each-con2.pkl')
-parser.add_argument('--image_root', type=str, default='/mnt/fs2/2019/Takamuro/db/photos_usa_2016')
+parser.add_argument('--image_root', type=str, default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017')
 parser.add_argument('--cp_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/transfer/'
                     'cUNet_w-e_res101-0408_train-D1T1_adam_b1-00_aug_wloss-mse_train200k-test500/cUNet_w-e_res101-0408_train-D1T1_adam_b1-00_aug_wloss-mse_train200k-test500_e0023_s322000.pt')
 parser.add_argument('--estimator_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/estimator/'
-                            'est_res101_flicker-p03th01-WoOutlier_sep-val_aug_pre_loss-mse-reduction-none-grad-all-1/est_resnet101_20_step22680.pt')
+                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/estimator/'
+                            '1209_est_res101_val_WoPerson_ss-10_L05/est_resnet101_15_step62240.pt')
 parser.add_argument('--input_size', type=int, default=224)
-parser.add_argument('--batch_size', type=int, default=50)
-parser.add_argument('--num_workers', type=int, default=4)
-parser.add_argument('--num_classes', type=int, default=6)
-
+parser.add_argument('--batch_size', type=int, default=5)
+parser.add_argument('--num_workers', type=int, default=8)
 args = parser.parse_args()
+os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
 import torch
@@ -62,27 +62,22 @@ def eval_est_trasnfer(batch, b_sig, r_sig, l1_li):
 
 
 if __name__ == '__main__':
-    s_li = ['sunny', 'cloudy', 'rain', 'foggy', 'snow']
-    c_li = ['Clear', 'Clouds', 'Rain', 'Mist', 'Snow']
-
     save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/results/eval_est_transfer',
                              args.cp_path.split('/')[-2],
                              args.cp_path.split('/')[-1].split('_')[-2])
 
     os.makedirs(save_path, exist_ok=True)
-    os.makedirs(os.path.join(save_path, 'out'), exist_ok=True)
-    cols = ['clouds', 'temp', 'humidity', 'pressure', 'windspeed']
+    # os.makedirs(os.path.join(save_path, 'out'), exist_ok=True)
+    cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'DewPointC']
 
-    transform = transforms.Compose([
-        transforms.Resize((args.input_size,)*2),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-    ])
+    transform = nn.Sequential(
+            # transforms.Resize((args.input_size,) * 2),
+            transforms.ConvertImageDtype(torch.float32),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+            )
 
     df = pd.read_pickle(args.pkl_path)
-
-    temp = pd.read_pickle('/mnt/fs2/2019/okada/from_nitta/parm_0.3/sepalated_data_wo-outlier.pkl')
-    df_ = temp.loc[:, cols].fillna(0)
+    df_ = df.loc[:, cols].fillna(0)
     df_mean = df_.mean()
     df_std = df_.std()
 
@@ -92,7 +87,7 @@ if __name__ == '__main__':
 
     print('loaded {} data'.format(len(df_sep)))
 
-    dataset = FlickrDataLoader(args.image_root, df, cols, transform=transform, class_id=True)
+    dataset = FlickrDataLoader(args.image_root, df, cols, transform=transform)
 
     loader = torch.utils.data.DataLoader(
             dataset,
@@ -120,10 +115,11 @@ if __name__ == '__main__':
     l1_li = np.empty((0, len(cols)))
     for i, (data, rnd) in tqdm(enumerate(zip(loader, random_loader)), total=len(df)//bs):
         batch = data[0].to('cuda')
+        batch = dataset.transform(batch)
         b_sig = data[1].to('cuda')
         # r_batch  = rnd[0].to('cuda')
         r_sig = rnd[1].to('cuda')
-  
+
         l1_li = eval_est_trasnfer(batch, b_sig, r_sig, l1_li)
 
     ave_l1 = np.mean(l1_li, axis=0)
@@ -136,6 +132,12 @@ if __name__ == '__main__':
     print('l1 std')
     print(std_l1)
     print((std_l1 * df_std))
-    # print('mse')
-    # print(ave_mse)
 
+    fig = plt.figure(figsize=(40, 10))
+    for i, col in enumerate(cols):
+        ax = fig.add_subplot(2, 4, i)
+        ax.hist(l1_li[:, i], bins=100)
+        ax.set_xlabel('{}_L1'.format(col))
+
+    fig.savefig(os.path.join(save_path, '{}_eval_result.jpg'.format(col)))
+    plt.clf()
