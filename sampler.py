@@ -57,46 +57,47 @@ class ImbalancedDatasetSampler(torch.utils.data.sampler.Sampler):
         return self.num_samples
 
 
-# class TimeImbalancedDatasetSampler(torch.utils.data.sampler.Sampler):
-#      """Samples elements randomly from a given list of indices for imbalanced dataset
-#     Arguments:
-#         indices (list, optional): a list of indices
-#         num_samples (int, optional): number of samples to draw
-#     """
-#     # if indices is not provided,
-#     # all elements in the dataset will be considered
-#     self.indices = list(range(len(dataset))) \
-#         if indices is None else indices
+class TimeImbalancedDatasetSampler(torch.utils.data.sampler.Sampler):
+    """Samples elements randomly from a given list of indices for imbalanced dataset
+    Arguments:
+    indices (list, optional): a list of indices
+    num_samples (int, optional): number of samples to draw
+    """
+    def __init__(self, dataset, indices=None, num_samples=None):
+        # if indices is not provided,
+        # all elements in the dataset will be considered
+        self.indices = list(range(len(dataset))) \
+            if indices is None else indices
 
-#     # if num_samples is not provided,
-#     # draw `len(indices)` samples in each iteration
-#     self.num_samples = len(self.indices) \
-#         if num_samples is None else num_samples
+        # if num_samples is not provided,
+        # draw `len(indices)` samples in each iteration
+        self.num_samples = len(self.indices) \
+            if num_samples is None else num_samples
 
-#     # distribution of classes in the dataset
-#     time_to_count = {}
-#     for idx in self.indices:
-#         time = self._get_time(dataset, idx)
-#         if time in time_to_count:
-#             time_to_count[time] += 1
-#         else:
-#             time_to_count[time] = 1
+        # distribution of classes in the dataset
+        time_to_count = {}
+        for idx in self.indices:
+            time = self._get_time(dataset, idx)
+            if time in time_to_count:
+                time_to_count[time] += 1
+            else:
+                time_to_count[time] = 1
 
-#     # weight for each sample
-#     weights = [1.0 / time_to_count[self._get_time(dataset, idx)]
-#                 for idx in self.indices]
-#     self.weights = torch.DoubleTensor(weights)
+        # weight for each sample
+        weights = [1.0 / time_to_count[self._get_time(dataset, idx)]
+                    for idx in self.indices]
+        self.weights = torch.DoubleTensor(weights)
 
-#     def _get_time(self, dataset, idx):
-#         dataset_type = type(dataset)
-#         if dataset_type in FlickrDataLoader:
-#             return dataset.get_time(idx)
-#         else:
-#             raise NotImplementedError
+    def _get_time(self, dataset, idx):
+        dataset_type = type(dataset)
+        if dataset_type is FlickrDataLoader:
+            return dataset.get_time(idx)
+        else:
+            raise NotImplementedError
 
-#     def __iter__(self):
-#         return (self.indices[i] for i in torch.multinomial(
-#             self.weights, self.num_samples, replacement=True))
+    def __iter__(self):
+        return (self.indices[i] for i in torch.multinomial(
+            self.weights, self.num_samples, replacement=True))
 
-#     def __len__(self):
-#         return self.num_samples
+    def __len__(self):
+        return self.num_samples
