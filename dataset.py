@@ -216,6 +216,46 @@ class OneYearWeatherSignals(Dataset):
         return self.image, sig, s_time
 
 
+class SensorLoader(Dataset):
+    def __init__(self, csv_root, date, city, cols, df_std, df_mean):
+        from glob import glob
+        # from datetime import datetime
+        year = int(date[0])
+        month = int(date[1])
+        day = int(date[2])
+        target = '{y}-{m:02}-{d:02}'.format(y=year, m=month, d=day)
+
+        self.csvs = glob(os.path.join(csv_root, '*.csv'))
+        self.csv = [i for i in self.csvs if city in i][0]
+
+        df = pd.read_csv(self.csv)
+
+        temp = df['local_date'].str.split(':', expand=True)[0]
+        df['local_date_'] = temp.str.split('T', expand=True)[0]
+        del temp
+
+        df.loc[:, cols] = (df.loc[:, cols] - df_mean) / df_std
+        df_ind = df[df.local_date_ == target].index[0]
+
+        self.df_sig = df.loc[df_ind: df_ind + (int(date[3]) * 24) - 1, cols + ['local_date']]
+        del df
+
+    def get_signal(self, idx):
+        sig = self.df_sig.iloc[idx, :-1].fillna(0).to_list()
+        sig_tensor = torch.from_numpy(np.array(sig)).float()
+        del sig
+        return sig_tensor
+
+    def __len__(self):
+        return len(self.df_sig)
+
+    def __getitem__(self, idx):
+        sig = self.get_signal(idx)
+        date = self.df_sig.iloc[idx, -1]
+
+        return sig, date
+
+
 class TransientAttributes(Dataset):
     def __init__(self, image_root, df, columns, transform=None):
         super(TransientAttributes, self).__init__()
