@@ -75,7 +75,7 @@ class WeatherTransfer(object):
         self.batch_size = args.batch_size
         self.global_step = 0
 
-        self.name = 'D-{}_{}_sampler-{}_GDratio{}_adam-b1{}-b2{}_ep{}'.format(args.name, args.disc, args.sampler, '1-' + str(args.GD_train_ratio),
+        self.name = '{}_D-{}_sampler-{}_GDratio{}_adam-b1{}-b2{}_ep{}'.format(args.name, args.disc, args.sampler, '1-' + str(args.GD_train_ratio),
                                                                               args.adam_beta1, args.adam_beta2, args.epsilon)
 
         comment = '_lr-{}_bs-{}_ne-{}'.format(args.lr, args.batch_size, args.num_epoch)
