@@ -110,11 +110,10 @@ class Conditional_UNet_V2(nn.Module):
         self.maxpool = nn.MaxPool2d(2)
         # self.dropout_half = HalfDropout(p=0.3)
 
-        # self.adain4 = AdaIN(1024, num_classes=num_classes)
-        # self.adain3 = AdaIN(512, num_classes=num_classes)
-        # self.adain2 = AdaIN(256, num_classes=num_classes)
-        # self.adain1 = AdaIN(128, num_classes=num_classes)
-        self.adain = AdaIN(256, num_classes=num_classes)
+        self.adain4 = AdaIN(1024, num_classes=num_classes)
+        self.adain3 = AdaIN(512, num_classes=num_classes)
+        self.adain2 = AdaIN(256, num_classes=num_classes)
+        self.adain1 = AdaIN(128, num_classes=num_classes)
 
         self.dconv_up4 = r_double_conv(512 + 1024, 512)
         self.dconv_up3 = r_double_conv(256 + 512, 256)
@@ -144,28 +143,28 @@ class Conditional_UNet_V2(nn.Module):
         # dropout
         # x = self.dropout_half(x)
 
-        x = self.adain(x, c)
+        x = self.adain4(x, c)
         x = self.upsample(x)
         x = self.dropout(x)
         x = torch.cat([x, conv4], dim=1)
 
         x = self.dconv_up4(x)
 
-        x = self.adain(x, c)
+        x = self.adain3(x, c)
         x = self.upsample(x)
         x = self.dropout(x)
         x = torch.cat([x, conv3], dim=1)
 
         x = self.dconv_up3(x)
 
-        x = self.adain(x, c)
+        x = self.adain2(x, c)
         x = self.upsample(x)
         x = self.dropout(x)
         x = torch.cat([x, conv2], dim=1)
 
         x = self.dconv_up2(x)
 
-        x = self.adain(x, c)
+        x = self.adain1(x, c)
         x = self.upsample(x)
         x = self.dropout(x)
         x = torch.cat([x, conv1], dim=1)
