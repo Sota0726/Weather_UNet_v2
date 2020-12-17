@@ -24,8 +24,9 @@ parser.add_argument('--num_workers', type=int, default=8)
 parser.add_argument('--csv_root', type=str, default='/mnt/fs2/2019/Takamuro/db/wwo_weather_data/usa/2016_2017')
 parser.add_argument('--city', type=str, default='Abram')
 parser.add_argument('--date', nargs=4, required=True)
-# args = parser.parse_args()
-args = parser.parse_args(args=['--date', '2016', '2', '21', '10'])
+parser.add_argument('-g', '--generator', type=str, default='cUNet')
+args = parser.parse_args()
+# args = parser.parse_args(args=['--date', '2016', '2', '21', '10'])
 
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
@@ -39,7 +40,7 @@ from torchvision.utils import save_image
 
 sys.path.append(os.getcwd())
 from dataset import FlickrDataLoader, SensorLoader
-from cunet import Conditional_UNet
+from cunet import Conditional_UNet, Conditional_UNet_V2
 
 
 def make_vid(save_path, p_name, start, end):
@@ -100,7 +101,14 @@ if __name__ == '__main__':
     )
 
     # load model
-    transfer = Conditional_UNet(len(cols))
+    if args.generator == 'cUNet':
+        transfer = Conditional_UNet(len(cols))
+    elif args.generator == 'cUNetV2':
+        transfer = Conditional_UNet_V2(len(cols))
+    else:
+        print('{} is invalid generator'.format(args.generator))
+        exit()
+
     sd = torch.load(args.cp_path)
     transfer.load_state_dict(sd['inference'])
 
