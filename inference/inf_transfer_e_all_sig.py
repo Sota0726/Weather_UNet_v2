@@ -91,6 +91,7 @@ if __name__ == '__main__':
 
     sd = torch.load(args.cp_path)
     transfer.load_state_dict(sd['inference'])
+    transfer.eval()
 
     estimator = torch.load(args.estimator_path)
     estimator.eval()
