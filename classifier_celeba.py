@@ -1,5 +1,4 @@
 import argparse
-import pickle
 import os
 
 import numpy as np
@@ -13,7 +12,7 @@ parser.add_argument('--pkl_path', type=str, default='/mnt/fs2/2019/Takamuro/db/C
 parser.add_argument('--name', type=str, default='clelba_classifier')
 parser.add_argument('--save_path', type=str, default='cp/classifier_celeba')
 parser.add_argument('--gpu', type=str, default='2')
-parser.add_argument('--input_size', type=int, default=224)
+parser.add_argument('--input_size', type=int, default=256)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--num_epoch', type=int, default=100)
 parser.add_argument('--batch_size', type=int, default=64)
@@ -21,6 +20,7 @@ parser.add_argument('--mode', type=str, default='T')
 parser.add_argument('--pre_trained', action='store_true')
 parser.add_argument('--model', type=str, default='mobilenet')
 parser.add_argument('--amp', action='store_true')
+parser.add_argument('--train_data_ratio', type=float, default=0.5)
 args = parser.parse_args()
 
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
@@ -30,14 +30,12 @@ import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
 import torchvision.models as models
+from torch.utils.tensorboard import SummaryWriter
 
 if args.amp:
     from apex import amp, optimizers
 
-from torch.utils.tensorboard import SummaryWriter
-
 from dataset import CelebALoader
-from sampler import ImbalancedDatasetSampler
 
 save_dir = os.path.join(args.save_path, args.name)
 os.makedirs(save_dir, exist_ok=True)
@@ -68,7 +66,8 @@ def validation(model, validloader):
 if __name__ == '__main__':
     df = pd.read_pickle(args.pkl_path)
     if args.mode == 'T':
-        df_sep = {'train': df[df['mode'] == 'train'].iloc[:50780],
+        num_train_data = len(df[df['mode'] == 'train'])
+        df_sep = {'train': df[df['mode'] == 'train'].iloc[:int(num_train_data * args.train_data_ratio)],
                   'test': df[df['mode'] == 'test']}
     elif args.mode == 'E':  # for evaluation
         df_sep = {'train': df[df['mode'] == 'val'],
@@ -77,15 +76,16 @@ if __name__ == '__main__':
 
     # torch >= 1.7
     train_transform = nn.Sequential(
+        transforms.CenterCrop((178, 178)),
+        transforms.Resize((args.input_size,) * 2),
         transforms.RandomRotation(10),
-        transforms.RandomResizedCrop(args.input_size),
         transforms.RandomHorizontalFlip(),
         transforms.ColorJitter(
-                brightness=0.5,
-                contrast=0.3,
-                saturation=0.3,
-                hue=0
-            ),
+            brightness=0.5,
+            contrast=0.3,
+            saturation=0.3,
+            hue=0
+        ),
         # torch >= 1.7
         transforms.ConvertImageDtype(torch.float32),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
@@ -93,6 +93,7 @@ if __name__ == '__main__':
 
     # torch >= 1.7
     test_transform = nn.Sequential(
+        transforms.CenterCrop((178, 178)),
         transforms.Resize((args.input_size,) * 2),
         # torch >= 1.7
         transforms.ConvertImageDtype(torch.float32),
@@ -107,18 +108,18 @@ if __name__ == '__main__':
     test_set = loader('test')
 
     train_loader = torch.utils.data.DataLoader(
-            train_set,
-            shuffle=True,
-            batch_size=args.batch_size,
-            drop_last=True,
-            num_workers=8)
+        train_set,
+        shuffle=True,
+        batch_size=args.batch_size,
+        drop_last=True,
+        num_workers=8)
 
     test_loader = torch.utils.data.DataLoader(
-            test_set,
-            batch_size=args.batch_size,
-            shuffle=True,
-            drop_last=True,
-            num_workers=8)
+        test_set,
+        batch_size=args.batch_size,
+        shuffle=True,
+        drop_last=True,
+        num_workers=8)
 
     num_classes = train_set.num_classes
 
@@ -151,7 +152,9 @@ if __name__ == '__main__':
     save_per_epoch = 5
     tqdm_iter = trange(args.num_epoch, desc='Training', leave=True)
 
-    comment = '_lr-{}_bs-{}_ne-{}_x{}_name-{}_pre-train-{}_amp-{}'.format(args.lr, args.batch_size, args.num_epoch, args.input_size, args.name, args.pre_trained, args.amp)
+    comment = '_lr-{}_bs-{}_ne-{}_x{}_name-{}_pre_train-{}_TrainDataRaio-{}'.format(
+        args.lr, args.batch_size, args.num_epoch,
+        args.input_size, args.name, args.pre_trained, args.train_data_ratio)
     writer = SummaryWriter(comment=comment)
 
     if args.amp:
@@ -198,11 +201,11 @@ if __name__ == '__main__':
                 writer.add_scalars('loss', {
                     'train': train_loss,
                     'test': val_loss
-                    }, global_step)
+                }, global_step)
                 writer.add_scalars('acc', {
                     'train': train_acc,
                     'test': val_acc
-                    }, global_step)
+                }, global_step)
                 loss_li = []
                 prec_li = []
                 acc_li = []

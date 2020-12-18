@@ -11,7 +11,7 @@ parser.add_argument('--save_dir', type=str, default='cp/transfer/celeba')
 parser.add_argument('--classifier_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/classifier_celeba/1211_CelebA_cls_mobilenetV2_train50780/resnet101_epoch80_step32076.pt'
                     )
-parser.add_argument('--input_size', type=int, default=224)
+parser.add_argument('--input_size', type=int, default=256)
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--lmda', type=float, default=None)
 parser.add_argument('--num_epoch', type=int, default=150)
@@ -90,21 +90,23 @@ class WeatherTransfer(object):
 
         # torch >= 1.7
         train_transform = nn.Sequential(
+            transforms.CenterCrop((178, 178)),
             transforms.Resize((args.input_size,) * 2),
             transforms.RandomRotation(10),
             transforms.RandomHorizontalFlip(),
             transforms.ColorJitter(
-                    brightness=0.5,
-                    contrast=0.3,
-                    saturation=0.3,
-                    hue=0
-                ),
+                brightness=0.5,
+                contrast=0.3,
+                saturation=0.3,
+                hue=0
+            ),
             transforms.ConvertImageDtype(torch.float32),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         )
 
         # torch >= 1.7
         test_transform = nn.Sequential(
+            transforms.CenterCrop((178, 178)),
             transforms.Resize((args.input_size,) * 2),
             transforms.ConvertImageDtype(torch.float32),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
@@ -361,8 +363,8 @@ class WeatherTransfer(object):
             self.writer.add_scalars(spk[0], {spk[1]: v}, self.global_step)
         for k, v in self.image_dict.items():
             grid = make_grid(v,
-                    nrow=1,
-                    normalize=True, scale_each=True)
+                             nrow=1,
+                             normalize=True, scale_each=True)
             self.writer.add_image(k, grid, self.global_step)
 
     def train(self):
@@ -390,14 +392,14 @@ class WeatherTransfer(object):
                             'discriminator': self.discriminator.module.state_dict(),
                             'epoch': self.epoch,
                             'global_step': self.global_step
-                            }
+                        }
                     else:
                         state_dict = {
-                                'inference': self.inference.state_dict(),
-                                'discriminator': self.discriminator.state_dict(),
-                                'epoch': self.epoch,
-                                'global_step': self.global_step
-                                }
+                            'inference': self.inference.state_dict(),
+                            'discriminator': self.discriminator.state_dict(),
+                            'epoch': self.epoch,
+                            'global_step': self.global_step
+                        }
                     torch.save(state_dict, out_path)
 
                 tqdm_iter.set_description('Training [ {} step ]'.format(self.global_step))
