@@ -13,7 +13,7 @@ parser.add_argument('--image_root', type=str, default='/mnt/fs2/2019/Takamuro/db
 parser.add_argument('--pkl_path', type=str, default='/mnt/fs2/2019/Takamuro/db/CelebA/Anno/list_attr_celeba_add-mode.pkl')
 parser.add_argument('--cp_path', type=str, default='cp/classifier_celeba/1211_CelebA_wideres50_train50780/resnet101_epoch80_step64233.pt')
 parser.add_argument('--gpu', type=str, default='2')
-parser.add_argument('--input_size', type=int, default=224)
+parser.add_argument('--input_size', type=int, default=256)
 parser.add_argument('--batch_size', type=int, default=20)
 args = parser.parse_args()
 
@@ -41,6 +41,7 @@ if __name__ == '__main__':
 
     # torch >= 1.7
     transform = nn.Sequential(
+        transforms.CenterCrop((178, 178)),
         transforms.Resize((args.input_size,) * 2),
         # torch >= 1.7
         transforms.ConvertImageDtype(torch.float32),
@@ -82,5 +83,6 @@ if __name__ == '__main__':
     fig = plt.figure()
     plt.bar(np.arange(num_classes), result, width=0.5, tick_label=cols, align='center')
     plt.xticks(rotation=90)
+    plt.title('total acc {}'.format(np.mean(result)))
     fig.savefig(os.path.join(save_path, 'each_class_acc.jpg'))
-    print('Done: training')
+    print('Done: evaluating')

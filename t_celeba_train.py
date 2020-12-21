@@ -223,6 +223,7 @@ class WeatherTransfer(object):
         # for real
         if self.args.supervised:
             pred_labels = labels
+            self.args.epsilon = 1e-2
         else:
             pred_labels = self.classifier(images).detach()
             pred_labels = torch.sigmoid(pred_labels)
