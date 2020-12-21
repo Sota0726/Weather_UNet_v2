@@ -5,20 +5,19 @@ import sys
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-import pickle
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 import matplotlib.pyplot as plt
 
 # Dataloder でPID kill error が出るときは画像を読み込めてない可能性が高いので，まずはパスをチェックする．
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=str, default='2')
 parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp-time6-18_Wo-person-animals.pkl')
-parser.add_argument('--image_root', type=str, 
+                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/outdoor_all_dbdate_wwo_weather_2016_17_delnoise_WoPerson_sky-10_L-05.pkl')
+parser.add_argument('--image_root', type=str,
                     default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017')
 parser.add_argument('--estimator_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/estimator/'
-                    'est_res101-1121_data-equal-mlp-con-gt_time-6-18/est_resnet101_15_step77424.pt'
-                    )
+                            '1209_est_res101_val_WoPerson_ss-10_L05/est_resnet101_15_step62240.pt')
 parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--batch_size', type=int, default=25)
 parser.add_argument('--num_workers', type=int, default=8)
@@ -143,8 +142,8 @@ if __name__ == '__main__':
 
     # df = df[df['mode'] == 'test']
 
-    for col in cols:
-        tab_img = make_matricx_img(df, df[col].tolist(), col)
+    # for col in cols:
+    #     tab_img = make_matricx_img(df, df[col].tolist(), col)
         # tab_img.save('gt_{}.jpg'.format(col))
 
     print('loaded {} data'.format(len(df)))
@@ -176,9 +175,8 @@ if __name__ == '__main__':
 
     bs = args.batch_size
 
-    l1_li = np.empty((0, len(cols)))
-    pred_li = np.empty((0, len(cols)))
-    mse_li = np.empty((0, len(cols)))
+    y_true_l = []
+    y_pred_l = []
 
     font = ImageFont.truetype("meiryo.ttc", 11)
     # vec_li = []
@@ -192,67 +190,54 @@ if __name__ == '__main__':
         preds = estimator(batch).detach()
         batch = batch.cpu()
 
-        # l1_ = F.l1_loss(pred, signals)
-        mse = F.mse_loss(preds, signals, reduction='none')
-        # l1 = torch.mean(torch.abs(pred - signals), dim=0)
-        # l1 = torch.abs(pred - signals)
-        l1 = signals - preds
-        if len(cols) == 1:
-            pred_li = np.append(pred_li, preds.cpu().numpy().reshape(bs, -1))
-            l1_li = np.append(l1_li, l1.cpu().numpy().reshape(bs, -1))
-            mse_li = np.append(mse_li, mse.cpu().numpy().reshape(bs, -1))
-        else:
-            pred_li = np.append(pred_li, preds.cpu().numpy().reshape(bs, -1), axis=0)
-            l1_li = np.append(l1_li, l1.cpu().numpy().reshape(bs, -1), axis=0)
-            mse_li = np.append(mse_li, mse.cpu().numpy().reshape(bs, -1), axis=0)
+        signals = signals.to('cpu')
+        preds = preds.to('cpu')
+        y_true_l.append(signals)
+        y_pred_l.append(preds)
 
-        for j in range(bs):
-            signal = signals[j].to('cpu')
-            pred = preds[j].to('cpu')
+        # for j in range(bs):
+        #     signal = signals[j]
+        #     pred = preds[j]
 
-            gt_img = Image.new('RGB', (args.input_size,) * 2, (0, 0, 0))
-            pred_img = Image.new('RGB', (args.input_size,) * 2, (0, 0, 0))
+        #     gt_img = Image.new('RGB', (args.input_size,) * 2, (0, 0, 0))
+        #     pred_img = Image.new('RGB', (args.input_size,) * 2, (0, 0, 0))
 
-            draw_gt = ImageDraw.Draw(gt_img)
-            draw_pred = ImageDraw.Draw(pred_img)
-            draw_gt.text((0, 0), 'gt signal', font=font, fill=(200, 200, 200))
-            draw_pred.text((0, 0), 'pred signal', font=font, fill=(200, 200, 200))
+        #     draw_gt = ImageDraw.Draw(gt_img)
+        #     draw_pred = ImageDraw.Draw(pred_img)
+        #     draw_gt.text((0, 0), 'gt signal', font=font, fill=(200, 200, 200))
+        #     draw_pred.text((0, 0), 'pred signal', font=font, fill=(200, 200, 200))
 
-            ind_df = df[df.photo == photo_ids[j]].index[0]
+        #     ind_df = df[df.photo == photo_ids[j]].index[0]
 
-            for k in range(num_classes):
-                signal_ = signal[k].item() * df_std[k] + df_mean[k]
-                pred_ = pred[k].item() * df_std[k] + df_mean[k]
-                gt_text = '{} = {}'.format(cols[k], signal_)
-                pred_text = '{} = {}'.format(cols[k], pred_)
+        #     for k in range(num_classes):
+        #         signal_ = signal[k].item() * df_std[k] + df_mean[k]
+        #         pred_ = pred[k].item() * df_std[k] + df_mean[k]
+        #         gt_text = '{} = {}'.format(cols[k], signal_)
+        #         pred_text = '{} = {}'.format(cols[k], pred_)
 
-                k_ = k + 1
-                draw_gt.text((0, k_ * 14), gt_text, font=font, fill=(200, 200, 200))
-                draw_pred.text((0, k_ * 14), pred_text, font=font, fill=(200, 200, 200))
+        #         k_ = k + 1
+        #         draw_gt.text((0, k_ * 14), gt_text, font=font, fill=(200, 200, 200))
+        #         draw_pred.text((0, k_ * 14), pred_text, font=font, fill=(200, 200, 200))
 
-                df.loc[ind_df, 'pred_{}'.format(cols[k])] = pred_
+        #         df.loc[ind_df, 'pred_{}'.format(cols[k])] = pred_
 
-            t_gt_img = transform_rgb(gt_img)
-            t_pred_img = transform_rgb(pred_img)
-            output = torch.cat([batch[j], t_gt_img, t_pred_img], dim=2)
+        #     t_gt_img = transform_rgb(gt_img)
+        #     t_pred_img = transform_rgb(pred_img)
+        #     output = torch.cat([batch[j], t_gt_img, t_pred_img], dim=2)
 
-            fp = os.path.join(save_path, 'input_imgs', photo_ids[j] + '.jpg')
-            save_image(output, fp=fp, normalize=True)
+        #     fp = os.path.join(save_path, 'input_imgs', photo_ids[j] + '.jpg')
+        #     save_image(output, fp=fp, normalize=True)
+
+    y_true_l = torch.cat(y_true_l, dim=0).numpy()
+    y_pred_l = torch.cat(y_pred_l, dim=0).numpy()
+
+    l1_li = y_true_l - y_pred_l
 
     ave_l1 = np.mean(l1_li, axis=0)
     std_l1 = np.std(l1_li, axis=0)
-    ave_mse = np.mean(mse_li, axis=0)
-    # with open(os.path.join(save_path, 'l1.pkl'), 'wb') as f:
-    #     pickle.dump(l1_li, f)
-    # with open(os.path.join(save_path, 'pred.pkl'), 'wb') as f:
-    #     pickle.dump(pred_li, f)
-    # with open(os.path.join(save_path, 'mse.pkl'), 'wb') as f:
-    #     pickle.dump(mse_li, f)
-    # with open('.pkl', 'wb') as f:
-    #     pickle.dump(df, f)
 
-    df.loc[:, cols] = df_.loc[:, cols]
-    df.to_pickle(os.path.join(save_path, mode + '_resutl.pkl'))
+    # df.loc[:, cols] = df_.loc[:, cols]
+    # df.to_pickle(os.path.join(save_path, mode + '_result.pkl'))
 
     print(cols)
     print('l1')
@@ -261,16 +246,16 @@ if __name__ == '__main__':
     print('l1 std')
     print(std_l1)
     print((std_l1 * df_std))
-    print('mse')
-    print(ave_mse)
 
-    # tab_img = make_matricx_img(df, pred_li[:,0])
-    if len(cols) == 1:
-        tab_img = make_matricx_img(df, pred_li, cols[0])
-        tab_img.save(os.path.join(save_path, 'est_{}.jpg'.format(cols[0])))
-        plot_hist(cols[0], df, l1_li, pred_li)
-    else:
-        for i, col in enumerate(cols):
-            tab_img = make_matricx_img(df, pred_li[:, i], col)
-            # tab_img.save(os.path.join(save_path, 'est_{}.jpg'.format(col)))
-            plot_hist(col, df, l1_li[:, i], pred_li[:, i], df_std, df_mean)
+    for i, col in enumerate(cols):
+        tab_img = make_matricx_img(df, y_pred_l[:, i], col)
+        # tab_img.save(os.path.join(save_path, 'est_{}.jpg'.format(col)))
+        plot_hist(col, df, l1_li[:, i], y_pred_l[:, i], df_std, df_mean)
+
+    r2 = r2_score(y_true_l, y_pred_l)
+    mae = mean_absolute_error(y_true_l, y_pred_l)
+    mse = mean_squared_error(y_true_l, y_pred_l)
+
+    print("r2 score = {}".format(r2))
+    print("mae score = {}".format(mae))
+    print("mse score = {}".format(mse))
