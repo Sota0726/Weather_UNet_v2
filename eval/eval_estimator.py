@@ -10,14 +10,14 @@ import matplotlib.pyplot as plt
 
 # Dataloder でPID kill error が出るときは画像を読み込めてない可能性が高いので，まずはパスをチェックする．
 parser = argparse.ArgumentParser()
-parser.add_argument('--gpu', type=str, default='2')
+parser.add_argument('--gpu', type=str, default='0')
 parser.add_argument('--pkl_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/outdoor_all_dbdate_wwo_weather_2016_17_delnoise_WoPerson_sky-10_L-05.pkl')
 parser.add_argument('--image_root', type=str,
                     default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017')
 parser.add_argument('--estimator_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/estimator/'
-                            '1209_est_res101_val_WoPerson_ss-10_L05/est_resnet101_15_step62240.pt')
+                    'est_res101-1203_sampler_pre_WoPerson_sky-10_L-05/est_resnet101_15_step62240.pt')
 parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--batch_size', type=int, default=25)
 parser.add_argument('--num_workers', type=int, default=8)
@@ -130,6 +130,8 @@ if __name__ == '__main__':
     df_ = df.loc[:, cols].fillna(0)
     df_mean = df_.mean()
     df_std = df_.std()
+    df_max = df_.max()
+    df_min = df_.min()
     df.loc[:, cols] = (df.loc[:, cols] - df_mean) / df_std
 
     if not mode == 'all':
@@ -147,7 +149,6 @@ if __name__ == '__main__':
         # tab_img.save('gt_{}.jpg'.format(col))
 
     print('loaded {} data'.format(len(df)))
-    input()
     # torch >= 1.7
     transform = nn.Sequential(
         transforms.ConvertImageDtype(torch.float32),
@@ -230,6 +231,8 @@ if __name__ == '__main__':
 
     y_true_l = torch.cat(y_true_l, dim=0).numpy()
     y_pred_l = torch.cat(y_pred_l, dim=0).numpy()
+    y_true_l_n = (y_true_l * df_std.values + df_mean.values) / df_max.values
+    y_pred_l_n = (y_pred_l * df_std.values + df_mean.values) / df_max.values
 
     l1_li = y_true_l - y_pred_l
 
@@ -247,15 +250,44 @@ if __name__ == '__main__':
     print(std_l1)
     print((std_l1 * df_std))
 
-    for i, col in enumerate(cols):
-        tab_img = make_matricx_img(df, y_pred_l[:, i], col)
-        # tab_img.save(os.path.join(save_path, 'est_{}.jpg'.format(col)))
-        plot_hist(col, df, l1_li[:, i], y_pred_l[:, i], df_std, df_mean)
+    # for i, col in enumerate(cols):
+    #     tab_img = make_matricx_img(df, y_pred_l[:, i], col)
+    #     # tab_img.save(os.path.join(save_path, 'est_{}.jpg'.format(col)))
+    #     plot_hist(col, df, l1_li[:, i], y_pred_l[:, i], df_std, df_mean)
 
-    r2 = r2_score(y_true_l, y_pred_l)
-    mae = mean_absolute_error(y_true_l, y_pred_l)
-    mse = mean_squared_error(y_true_l, y_pred_l)
+    r2 = r2_score(y_true_l_n, y_pred_l_n)
+    mae = mean_absolute_error(y_true_l_n, y_pred_l_n)
+    mse = mean_squared_error(y_true_l_n, y_pred_l_n)
 
     print("r2 score = {}".format(r2))
     print("mae score = {}".format(mae))
     print("mse score = {}".format(mse))
+
+    l1 = np.abs(y_true_l_n - y_pred_l_n)
+    mae_l = np.mean(l1, axis=0)
+    mae_std_l = np.std(l1, axis=0)
+
+    plt.bar(np.arange(len(cols)), mae_l, yerr=mae_std_l, tick_label=cols, align='center')
+    plt.xticks(rotation=90)
+    plt.savefig(os.path.join(save_path, 'mae.png'))
+
+
+# train
+# r2 score = 0.149372071422682
+# mae score = 0.160504865099651
+# mse score = 0.05649023232962158
+# val
+# epoch 15
+# r2 score = 0.18266121390842013
+# mae score = 0.15324589499927965
+# mse score = 0.05277723799014609
+
+# epoch 10
+# r2 score = 0.20227510886747546
+# mae score = 0.15185067555927037
+# mse score = 0.052515542568275564
+
+# R^E(T, \hat{S})
+# r2 score = 0.015976026891002706
+# mae score = 0.17013560287450424
+# mse score = 0.058921149095193665

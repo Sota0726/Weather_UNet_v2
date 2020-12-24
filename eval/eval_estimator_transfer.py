@@ -17,14 +17,16 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=str)
 parser.add_argument('--pkl_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/outdoor_all_dbdate_wwo_weather_2016_17_delnoise_WoPerson_sky-10_L-05_50testImgs.pkl')
+                    # default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/outdoor_all_dbdate_wwo_weather_2016_17_delnoise_WoPerson_sky-10_L-05.pkl')
+
 parser.add_argument('--image_root', type=str, default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017')
 parser.add_argument('--cp_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/transfer/est/1204_cUNet_w-e_res101-1203L05e15_SNDisc_sampler-False_GDratio1-8_adam-b10.5-b20.9_lr-0.0001_bs-24_ne-150/cUNet_est_e0134_s1432000.pt')
 parser.add_argument('--estimator_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/estimator/'
-                            '1209_est_res101_val_WoPerson_ss-10_L05/est_resnet101_15_step62240.pt')
+                    '1209_est_res101_val_WoPerson_ss-10_L05/est_resnet101_10_step42790.pt')
 parser.add_argument('--input_size', type=int, default=224)
-parser.add_argument('--batch_size', type=int, default=5)
+parser.add_argument('--batch_size', type=int, default=50)
 parser.add_argument('--num_workers', type=int, default=8)
 args = parser.parse_args()
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
@@ -77,34 +79,39 @@ if __name__ == '__main__':
     cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'DewPointC']
 
     transform = nn.Sequential(
-            # transforms.Resize((args.input_size,) * 2),
-            transforms.ConvertImageDtype(torch.float32),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-            )
+        # transforms.Resize((args.input_size,) * 2),
+        transforms.ConvertImageDtype(torch.float32),
+        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        )
 
     df = pd.read_pickle(args.pkl_path)
-    df_ = df.loc[:, cols].fillna(0)
+    temp_df = pd.read_pickle('/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/outdoor_all_dbdate_wwo_weather_2016_17_delnoise_WoPerson_sky-10_L-05.pkl')
+    df_ = temp_df.loc[:, cols].fillna(0)
     df_mean = df_.mean()
     df_std = df_.std()
+    df_max = df_.max()
+    df_min = df_.min()
 
     df.loc[:, cols] = (df.loc[:, cols].fillna(0) - df_mean) / df_std
 
     df_sep = df[df['mode'] == 'test']
+    del temp_df
 
     print('loaded {} data'.format(len(df_sep)))
 
-    dataset = FlickrDataLoader(args.image_root, df, cols, transform=transform)
+    dataset = FlickrDataLoader(args.image_root, df_sep, cols, transform=transform)
 
     loader = torch.utils.data.DataLoader(
-            dataset,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers
-            )
+        dataset,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers
+    )
     random_loader = torch.utils.data.DataLoader(
-            dataset,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            )
+        dataset,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        shuffle=True
+    )
 
     # load model
     transfer = Conditional_UNet(num_classes=len(cols))
@@ -121,7 +128,7 @@ if __name__ == '__main__':
     bs = args.batch_size
     y_true_l = []
     y_pred_l = []
-    for i, (data, rnd) in tqdm(enumerate(zip(loader, random_loader)), total=len(df)//bs):
+    for i, (data, rnd) in tqdm(enumerate(zip(loader, random_loader)), total=len(df_sep)//bs):
         batch = data[0].to('cuda')
         batch = dataset.transform(batch)
         # b_sig = data[1].to('cuda')
@@ -129,15 +136,22 @@ if __name__ == '__main__':
         r_sig = rnd[1].to('cuda')
 
         y_true, y_pred = eval_est_trasnfer(batch, r_sig)
+        # with torch.no_grad():
+        #     out = transfer(batch, r_sig)
+        #     pred = estimator(out)
+        # y_true = r_sig.to('cpu')
+        # y_pred = pred.to('cpu')
         y_true_l.append(y_true)
         y_pred_l.append(y_pred)
 
     y_true_l = torch.cat(y_true_l, dim=0).numpy()
     y_pred_l = torch.cat(y_pred_l, dim=0).numpy()
+    y_true_l_n = (y_true_l * df_std.values + df_mean.values) / df_max.values
+    y_pred_l_n = (y_pred_l * df_std.values + df_mean.values) / df_max.values
 
-    r2 = r2_score(y_true_l, y_pred_l)
-    mae = mean_absolute_error(y_true_l, y_pred_l)
-    mse = mean_squared_error(y_true_l, y_pred_l)
+    r2 = r2_score(y_true_l_n, y_pred_l_n)
+    mae = mean_absolute_error(y_true_l_n, y_pred_l_n)
+    mse = mean_squared_error(y_true_l_n, y_pred_l_n)
 
     print("r2 score = {}".format(r2))
     print("mae score = {}".format(mae))

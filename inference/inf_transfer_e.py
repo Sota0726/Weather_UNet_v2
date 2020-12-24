@@ -79,21 +79,21 @@ if __name__ == '__main__':
         dataset = FlickrDataLoader(args.image_root, df_sep, cols, transform=transform, inf=True)
 
     loader = torch.utils.data.DataLoader(
-            dataset,
-            # sampler=ImbalancedDatasetSampler(dataset),
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            drop_last=True,
-            shuffle=True
-            )
+        dataset,
+        # sampler=ImbalancedDatasetSampler(dataset),
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        drop_last=True,
+        shuffle=True
+    )
     random_loader = torch.utils.data.DataLoader(
-            dataset,
-            # sampler=ImbalancedDatasetSampler(dataset),
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            drop_last=True,
-            # shuffle=True
-            )
+        dataset,
+        # sampler=ImbalancedDatasetSampler(dataset),
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        drop_last=True,
+        # shuffle=True
+    )
 
     if args.r_pkl_path:
         r_df = pd.read_pickle(args.s_pkl_path)
@@ -155,4 +155,3 @@ if __name__ == '__main__':
         [save_image(_, fp=os.path.join(save_path, 'row_{}.jpg'.format(i)), normalize=True, scale_each=True) for i, _ in enumerate(io_im)]
         tab_im = torch.cat([ref_imgs, io_im], dim=0)
         save_image(tab_im, fp=os.path.join(save_path, '{}.jpg'.format(k)), normalize=True, scale_each=True, nrow=1)
-        [save_image(_, fp=os.path.join(save_path, 'row_{}.jpg'.format(i)), normalize=True, scale_each=True) for i, _ in enumerate(tab_im)]
