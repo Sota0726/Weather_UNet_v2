@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 from tqdm import tqdm
-import shutil
 from torchvision.utils import save_image
 
 from sklearn.metrics import classification_report, confusion_matrix
@@ -21,7 +20,7 @@ parser.add_argument('--pkl_path', type=str,
 parser.add_argument('--cp_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/transfer/'
                     'cUNet_w-c-res101-0317_img-i2w_train-D1T1_aug_supervised_shuffle_adam-b1-09_wloss_CrossEnt/cUNet_w-c-res101-0317_img-i2w_train-D1T1_aug_supervised_shuffle_adam-b1-09_wloss_CrossEnt_e0035_s132000.pt')
-                    #'cUNet_w-c-res101-0317_img-flicker-200k_aug_shuffle_adam-b1-09_wloss-CrossEnt/cUNet_w-c-res101-0317_img-flicker-200k_aug_shuffle_adam-b1-09_wloss-CrossEnt_e0025_s324000.pt')
+                    # 'cUNet_w-c-res101-0317_img-flicker-200k_aug_shuffle_adam-b1-09_wloss-CrossEnt/cUNet_w-c-res101-0317_img-flicker-200k_aug_shuffle_adam-b1-09_wloss-CrossEnt_e0025_s324000.pt')
 parser.add_argument('--classifer_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/classifier/cls_res101_i2w_sep-val_aug_20200408/resnet101_epoch15_step59312.pt')
 parser.add_argument('--input_size', type=int, default=224)
@@ -44,7 +43,6 @@ from torch.utils.data import Dataset
 
 sys.path.append(os.getcwd())
 from dataset import ClassImageLoader
-from sampler import ImbalancedDatasetSampler
 from cunet import Conditional_UNet
 
 if __name__ == '__main__':
@@ -63,17 +61,17 @@ if __name__ == '__main__':
     dataset = ClassImageLoader(paths=sep_data, transform=transform, inf=True)
 
     loader = torch.utils.data.DataLoader(
-            dataset,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            drop_last=True
-            )
+        dataset,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        drop_last=True
+    )
     random_loader = torch.utils.data.DataLoader(
-            dataset,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            drop_last=True
-            )
+        dataset,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        drop_last=True
+    )
 
     # load model
     transfer = Conditional_UNet(num_classes=args.num_classes)
@@ -83,9 +81,9 @@ if __name__ == '__main__':
 
     classifer = torch.load(args.classifer_path)
     classifer = nn.Sequential(
-                        classifer,
-                        nn.Softmax(dim=1)
-                    )
+        classifer,
+        nn.Softmax(dim=1)
+    )
     classifer.eval()
 
     transfer.cuda()
@@ -99,7 +97,7 @@ if __name__ == '__main__':
     vec_li = []
 
     cp_name = args.cp_path.split('/')[-1].split('.')[0]
-    save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/results/eval_transfer', 'cls',
+    save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'cls',
                              args.cp_path.split('/')[-2],
                              cp_name.split('_')[-2] + cp_name.split('_')[-1])
     print(save_path)
@@ -107,7 +105,7 @@ if __name__ == '__main__':
     input()
     os.makedirs(save_path, exist_ok=True)
 
-    for data, rnd in tqdm(zip(loader, random_loader), total=len(sep_data)//bs):
+    for data, rnd in tqdm(zip(loader, random_loader), total=len(sep_data) // bs):
         batch = data[0].to('cuda')
         # r_batch = rnd[0].to('cuda')
         # c_batch = rnd[1].to('cuda')
