@@ -23,11 +23,11 @@ parser.add_argument('--estimator_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/estimator/'
                     'est_res101-1203_sampler_pre_WoPerson_sky-10_L-05/est_resnet101_15_step62240.pt')
 parser.add_argument('--input_size', type=int, default=224)
-parser.add_argument('--batch_size', type=int, default=10)
+parser.add_argument('--batch_size', type=int, default=5)
 parser.add_argument('--num_workers', type=int, default=8)
 parser.add_argument('--image_only', action='store_true')
-args = parser.parse_args(['--pkl_path', '/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/for_inf_10imgs.pkl'])
-# args = parser.parse_args()
+# args = parser.parse_args(['--pkl_path', '/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/for_inf_10imgs.pkl'])
+args = parser.parse_args()
 
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
@@ -96,7 +96,9 @@ if __name__ == '__main__':
     )
 
     if args.r_pkl_path:
-        r_df = pd.read_pickle(args.s_pkl_path)
+        del random_loader
+        r_df = pd.read_pickle(args.r_pkl_path)
+        print(r_df)
         r_df.loc[:, cols] = (r_df.loc[:, cols].fillna(0) - df_mean) / df_std
         r_dataset = FlickrDataLoader(args.image_root, r_df, cols, transform=transform, inf=True)
         random_loader = torch.utils.data.DataLoader(
@@ -105,7 +107,6 @@ if __name__ == '__main__':
             batch_size=10,
             num_workers=args.num_workers,
             drop_last=True,
-            shuffle=True
         )
         r_bs = 10
 
