@@ -5,6 +5,7 @@ import torch.nn as nn
 import torchvision.transforms.functional as F
 from nets import fc_x2
 
+
 class ConditionalNorm(nn.Module):
     def __init__(self, in_channel, num_classes=5):
         super().__init__()

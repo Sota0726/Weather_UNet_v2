@@ -1,39 +1,7 @@
 import argparse
 import os
-
-parser = argparse.ArgumentParser()
-parser.add_argument('--image_root', type=str,
-                    default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017'
-                    )
-parser.add_argument('--name', type=str, default='cUNet')
-# Nmaing rule : cUNet_[c(classifier) or e(classifier)]_[detail of condition]_[epoch]_[step]
-parser.add_argument('--gpus', type=str, default='1')
-parser.add_argument('--save_dir', type=str, default='cp/transfer')
-parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/outdoor_all_dbdate_wwo_weather_2016_17_delnoise_WoPerson_sky-10_L-05.pkl'
-                    )
-parser.add_argument('--classifier_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/classifier/cls_res101_1122_NotPreTrain/resnet101_epoch15_step59312.pt'
-                    )
-parser.add_argument('--input_size', type=int, default=224)
-parser.add_argument('--lr', type=float, default=1e-4)
-parser.add_argument('--lmda', type=float, default=None)
-parser.add_argument('--num_epoch', type=int, default=150)
-parser.add_argument('--batch_size', '-bs', type=int, default=24)
-parser.add_argument('--num_workers', type=int, default=8)
-parser.add_argument('--GD_train_ratio', type=int, default=8)
-parser.add_argument('--sampler', default='condition')
-parser.add_argument('--loss_lamda_cw', '-lm', type=float, nargs=2, default=[1, 1])
-parser.add_argument('-b1', '--adam_beta1', type=float, default=0.5)
-parser.add_argument('-b2', '--adam_beta2', type=float, default=0.9)
-parser.add_argument('-e', '--epsilon', type=float, default=1e-2)
-parser.add_argument('--amp', action='store_true')
-parser.add_argument('--multi_gpu', action='store_true')
-parser.add_argument('-wt', '--wloss_type', type=str, default='mse')
-parser.add_argument('-g', '--generator', type=str, default='cUNet')
-parser.add_argument('-d', '--disc', type=str, default='SNDisc')
-args = parser.parse_args()
-# args = parser.parse_args(args=['--gpu', '3', '--sampler', '--name', 'debug'])
+from args import get_args
+args = get_args()
 
 # GPU Setting
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
@@ -60,10 +28,6 @@ if args.amp:
     from apex import amp, optimizers
 
 from ops import *
-from dataset import ImageLoader, FlickrDataLoader
-from sampler import ImbalancedDatasetSampler
-from cunet import Conditional_UNet, Conditional_UNet_V2
-from disc import SNDisc, SNDisc_, SNResNet64ProjectionDiscriminator, SNResNetProjectionDiscriminator
 from utils import MakeOneHot
 
 
@@ -77,9 +41,14 @@ class WeatherTransfer(object):
             print('set batch size multiple of 8')
         self.global_step = 0
 
-        self.name = 'Flickr_{}_sampler-{}_loss_lamda-c{}-w{}-{}_b1-{}_b2-{}_GDratio-{}_amp-{}_MGpu-{}'.format(self.args.name, self.args.sampler, self.args.loss_lamda_cw[0],
-                                                                                        self.args.loss_lamda_cw[1], self.args.weather_loss, self.args.adam_beta1, self.args.adam_beta2,
-                                                                                        self.args.GD_train_ratio, self.args.amp, self.args.multi_gpu)
+        self.name = 'Flickr_{}_sampler-{}_wloss-{}_b1-{}_b2-{}_GDratio-{}'.format(
+            self.args.name,
+            self.args.sampler,
+            self.args.weather_loss,
+            self.args.adam_beta1,
+            self.args.adam_beta2,
+            self.args.GD_train_ratio
+        )
 
         comment = '_lr-{}*{}_bs-{}_ne-{}'.format(str((args.batch_size / 16)), self.args.lr, self.args.batch_size, self.args.num_epoch)
 
@@ -99,11 +68,11 @@ class WeatherTransfer(object):
             # transforms.RandomResizedCrop(args.input_size),
             transforms.RandomHorizontalFlip(),
             transforms.ColorJitter(
-                    brightness=0.5,
-                    contrast=0.3,
-                    saturation=0.3,
-                    hue=0
-                ),
+                brightness=0.5,
+                contrast=0.3,
+                saturation=0.3,
+                hue=0
+            ),
             transforms.ConvertImageDtype(torch.float32),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         )
@@ -132,8 +101,10 @@ class WeatherTransfer(object):
         df_shuffle = df.sample(frac=1)
         # df_sep = {'train': df_shuffle[df_shuffle['mode'] == 't_train'],
         #           'test': df_shuffle[df_shuffle['mode'] == 'test']}
-        df_sep = {'train': df_shuffle[(df_shuffle['mode'] == 't_train') | (df_shuffle['mode'] == 'train')],
-                    'test': df_shuffle[df_shuffle['mode'] == 'test']}
+        df_sep = {
+            'train': df_shuffle[(df_shuffle['mode'] == 't_train') | (df_shuffle['mode'] == 'train')],
+            'test': df_shuffle[df_shuffle['mode'] == 'test']
+        }
         del df, df_shuffle
         print(df_sep['train'].condition.value_counts())
         loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], self.cols, transform=self.transform[s], class_id=True)
@@ -150,41 +121,8 @@ class WeatherTransfer(object):
 
         # Models
         print('Build Models...')
-        if args.generator == 'cUNet':
-            self.inference = Conditional_UNet(num_classes=self.num_classes)
-        elif args.generator == 'cUNetV2':
-            self.inference = Conditional_UNet_V2(num_classes=self.num_classes)
-        else:
-            print('{} is invalid generator'.format(args.generator))
-            exit()
-
-        if args.disc == 'SNDisc':
-            self.discriminator = SNDisc(num_classes=self.num_classes)
-        elif args.disc == 'SNDiscV2':
-            self.discriminator = SNDisc_(num_classes=self.num_classes)
-        elif args.disc == 'SNRes64':
-            self.discriminator = SNResNet64ProjectionDiscriminator(num_classes=self.num_classes)
-        elif args.disc == 'SNRes':
-            self.discriminator = SNResNetProjectionDiscriminator(num_classes=self.num_classes)
-        else:
-            print('{} is invalid discriminator'.format(args.disc))
-            exit()
-
-        exist_cp = sorted(glob(os.path.join(args.save_dir, self.name, '*')))
-        if len(exist_cp) != 0:
-            print('Load checkpoint:{}'.format(exist_cp[-1]))
-            sd = torch.load(exist_cp[-1])
-            self.inference.load_state_dict(sd['inference'])
-            self.discriminator.load_state_dict(sd['discriminator'])
-            self.epoch = sd['epoch']
-            self.global_step = sd['global_step']
-            print('Success checkpoint loading!')
-        else:
-            print('Initialize training status.')
-            self.epoch = 0
-            self.global_step = 0
-
-        self.classifier = torch.load(args.classifier_path)
+        args.estimator_path = args.classifier_path
+        self.inference, self.discriminator, self.classifier, self.epoch, self.global_step = make_network(args, self.num_classes, self.name)
         self.classifier.eval()
 
         # Optimizer
@@ -277,11 +215,11 @@ class WeatherTransfer(object):
             'losses/loss_con/train': loss_con.item(),
             'variables/lmda': self.lmda,
             'variables/denominator_loss_con': torch.mean(lmda).item()
-            })
+        })
 
         self.image_dict.update({
             'io/train': torch.cat([images, fake_out.detach(), rand_images], dim=3),
-            })
+        })
 
         return g_loss_adv.item(), loss_con.item(), g_loss_w.item()
 
@@ -317,7 +255,7 @@ class WeatherTransfer(object):
 
         self.scalar_dict.update({
             'losses/d_loss/train': d_loss.item()
-            })
+        })
 
         return d_loss.item()
 
@@ -365,18 +303,18 @@ class WeatherTransfer(object):
 
         # --- WRITING SUMMARY ---#
         self.scalar_dict.update({
-                'losses/g_loss_adv/test': np.mean(g_loss_adv_),
-                'losses/g_loss_l1/test': np.mean(g_loss_l1_),
-                'losses/g_loss_w/test': np.mean(g_loss_w_),
-                'losses/d_loss/test': np.mean(d_loss_)
-                })
+            'losses/g_loss_adv/test': np.mean(g_loss_adv_),
+            'losses/g_loss_l1/test': np.mean(g_loss_l1_),
+            'losses/g_loss_w/test': np.mean(g_loss_w_),
+            'losses/d_loss/test': np.mean(d_loss_)
+        })
         ref_img = torch.cat([blank] + list(torch.split(ref_images, 1)), dim=3)
         in_out_img = torch.cat([images] + fake_out_li, dim=3)
         res_img = torch.cat([ref_img, in_out_img], dim=0)
 
         self.image_dict.update({
             'images/test': res_img,
-                })
+        })
 
     def update_summary(self):
         # Summarize
@@ -384,9 +322,12 @@ class WeatherTransfer(object):
             spk = k.rsplit('/', 1)
             self.writer.add_scalars(spk[0], {spk[1]: v}, self.global_step)
         for k, v in self.image_dict.items():
-            grid = make_grid(v,
-                    nrow=1,
-                    normalize=True, scale_each=True)
+            grid = make_grid(
+                v,
+                nrow=1,
+                normalize=True,
+                scale_each=True
+            )
             self.writer.add_image(k, grid, self.global_step)
 
     def train(self):
@@ -414,14 +355,14 @@ class WeatherTransfer(object):
                             'discriminator': self.discriminator.module.state_dict(),
                             'epoch': self.epoch,
                             'global_step': self.global_step
-                            }
+                        }
                     else:
                         state_dict = {
-                                'inference': self.inference.state_dict(),
-                                'discriminator': self.discriminator.state_dict(),
-                                'epoch': self.epoch,
-                                'global_step': self.global_step
-                                }
+                            'inference': self.inference.state_dict(),
+                            'discriminator': self.discriminator.state_dict(),
+                            'epoch': self.epoch,
+                            'global_step': self.global_step
+                        }
                     torch.save(state_dict, out_path)
 
                 tqdm_iter.set_description('Training [ {} step ]'.format(self.global_step))

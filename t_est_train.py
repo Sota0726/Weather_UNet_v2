@@ -1,41 +1,7 @@
 import argparse
 import os
-
-parser = argparse.ArgumentParser()
-parser.add_argument('--image_root', type=str,
-                    default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017'
-                    )
-parser.add_argument('--name', type=str, default='cUNet')
-# Nmaing rule : cUNet_[c(classifier) or e(estimator)]_[detail of condition]_[epoch]_[step]
-parser.add_argument('--gpu', type=str, default='0')
-parser.add_argument('--save_dir', type=str, default='cp/transfer')
-parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/outdoor_all_dbdate_wwo_weather_2016_17_delnoise_WoPerson_sky-10_L-05.pkl'
-                    )
-parser.add_argument('--estimator_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/estimator/'
-                    'est_res101-1203_sampler_pre_WoPerson_sky-10_L-05/est_resnet101_15_step62240.pt'
-                    )
-parser.add_argument('--input_size', type=int, default=224)
-parser.add_argument('--lr', type=float, default=1e-4)
-parser.add_argument('--lmda', type=float, default=None)
-parser.add_argument('--num_epoch', type=int, default=150)
-parser.add_argument('--batch_size', '-bs', type=int, default=16)
-parser.add_argument('--num_workers', type=int, default=8)
-parser.add_argument('--GD_train_ratio', type=int, default=8)
-parser.add_argument('--sampler', default=None)
-parser.add_argument('--resume_cp', type=str)
-parser.add_argument('-b1', '--adam_beta1', type=float, default=0.5)
-parser.add_argument('-b2', '--adam_beta2', type=float, default=0.9)
-parser.add_argument('-e', '--epsilon', type=float, default=1e-7)
-parser.add_argument('-ww', '--wloss_weight', type=int, nargs=8, default=[1,1,1,1,1,1,1,1])
-parser.add_argument('-wt', '--wloss_type', type=str, default='mse')
-parser.add_argument('--amp', action='store_true')
-parser.add_argument('--multi_gpu', action='store_true')
-parser.add_argument('-g', '--generator', type=str, default='cUNet')
-parser.add_argument('-d', '--disc', type=str, default='SNDisc')
-args = parser.parse_args()
-# args = parser.parse_args(args=['--name', 'debug'])
+from args import get_args
+args = get_args()
 
 # GPU Setting
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
@@ -61,10 +27,6 @@ if args.amp:
     from apex import amp, optimizers
 
 from ops import *
-from dataset import ImageLoader, FlickrDataLoader
-
-from cunet import Conditional_UNet, Conditional_UNet_V2
-from disc import SNDisc, SNDisc_, SNResNet64ProjectionDiscriminator, SNResNetProjectionDiscriminator
 
 
 class WeatherTransfer(object):
@@ -96,11 +58,11 @@ class WeatherTransfer(object):
             # transforms.RandomResizedCrop(args.input_size),
             transforms.RandomHorizontalFlip(),
             transforms.ColorJitter(
-                    brightness=0.5,
-                    contrast=0.3,
-                    saturation=0.3,
-                    hue=0
-                ),
+                brightness=0.5,
+                contrast=0.3,
+                saturation=0.3,
+                hue=0
+            ),
             transforms.ConvertImageDtype(torch.float32),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         )
@@ -140,8 +102,10 @@ class WeatherTransfer(object):
         df_shuffle = df.sample(frac=1)
         # df_sep = {'train': df_shuffle[df_shuffle['mode'] == 't_train'],
         #           'test': df_shuffle[df_shuffle['mode'] == 'test']}
-        df_sep = {'train': df_shuffle[(df_shuffle['mode'] == 't_train') | (df_shuffle['mode'] == 'train')],
-                    'test': df_shuffle[df_shuffle['mode'] == 'test']}
+        df_sep = {
+            'train': df_shuffle[(df_shuffle['mode'] == 't_train') | (df_shuffle['mode'] == 'train')],
+            'test': df_shuffle[df_shuffle['mode'] == 'test']
+        }
         del df, df_shuffle
         loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], self.cols, transform=self.transform[s])
 
@@ -155,46 +119,7 @@ class WeatherTransfer(object):
 
         # Models
         print('Build Models...')
-
-        if args.generator == 'cUNet':
-            self.inference = Conditional_UNet(num_classes=self.num_classes)
-        elif args.generator == 'cUNetV2':
-            self.inference = Conditional_UNet_V2(num_classes=self.num_classes)
-        else:
-            print('{} is invalid generator'.format(args.generator))
-            exit()
-
-        if args.disc == 'SNDisc':
-            self.discriminator = SNDisc(num_classes=self.num_classes)
-        elif args.disc == 'SNDiscV2':
-            self.discriminator = SNDisc_(num_classes=self.num_classes)
-        elif args.disc == 'SNRes64':
-            self.discriminator = SNResNet64ProjectionDiscriminator(num_classes=self.num_classes)
-        elif args.disc == 'SNRes':
-            self.discriminator = SNResNetProjectionDiscriminator(num_classes=self.num_classes)
-        else:
-            print('{} is invalid discriminator'.format(args.disc))
-            exit()
-
-        if args.resume_cp:
-            exist_cp = [args.resume_cp]
-        else:
-            exist_cp = sorted(glob(os.path.join(args.save_dir, self.name, '*')))
-
-        if len(exist_cp) != 0:
-            print('Load checkpoint:{}'.format(exist_cp[-1]))
-            sd = torch.load(exist_cp[-1])
-            self.inference.load_state_dict(sd['inference'])
-            self.discriminator.load_state_dict(sd['discriminator'])
-            self.epoch = sd['epoch']
-            self.global_step = sd['global_step']
-            print('Success checkpoint loading!')
-        else:
-            print('Initialize training status.')
-            self.epoch = 0
-            self.global_step = 0
-
-        self.estimator = torch.load(args.estimator_path)
+        self.inference, self.discriminator, self.estimator, self.epoch, self.global_step = make_network(args, self.num_classes, self.name)
         self.estimator.eval()
 
         # Models to CUDA
@@ -214,7 +139,6 @@ class WeatherTransfer(object):
             self.discriminator = nn.DataParallel(self.discriminator)
             self.estimator = nn.DataParallel(self.estimator)
 
-        # これらのloaderにsamplerは必要ないのか？
         self.random_loader = make_dataloader(self.train_set, args)
         args.sampler = False
         self.train_loader = make_dataloader(self.train_set, args)
@@ -279,11 +203,11 @@ class WeatherTransfer(object):
             'losses/g_loss_w/train': g_loss_w.item(),
             'losses/loss_con/train': loss_con.item(),
             'variables/lmda': self.lmda
-            })
+        })
 
         self.image_dict.update({
             'io/train': torch.cat([images, fake_out.detach(), rand_images], dim=3),
-            })
+        })
 
         return g_loss_adv.item(), loss_con.item(), g_loss_w.item()
 
@@ -315,7 +239,7 @@ class WeatherTransfer(object):
 
         self.scalar_dict.update({
             'losses/d_loss/train': d_loss.item()
-            })
+        })
 
         return d_loss.item()
 
@@ -340,7 +264,7 @@ class WeatherTransfer(object):
                 ref_labels_expand = torch.cat([ref_labels[i]] * self.batch_size).view(-1, self.num_classes)
                 fake_out_ = self.inference(images, ref_labels_expand)
                 fake_c_out_ = self.estimator(fake_out_)
-                # fake_d_out_ = self.discriminator(fake_out_, labels)[0]  # Dへの入力はfake_out_ と re_labels_expandではないのか？
+                # fake_d_out_ = self.discriminator(fake_out_, labels)[0]
                 real_d_out_ = self.discriminator(images, labels)[0]
                 fake_d_out_ = self.discriminator(fake_out_, ref_labels_expand)[0]
 
@@ -357,18 +281,18 @@ class WeatherTransfer(object):
 
         # --- WRITING SUMMARY ---#
         self.scalar_dict.update({
-                'losses/g_loss_adv/test': np.mean(g_loss_adv_),
-                'losses/g_loss_l1/test': np.mean(g_loss_l1_),
-                'losses/g_loss_w/test': np.mean(g_loss_w_),
-                'losses/d_loss/test': np.mean(d_loss_)
-                })
+            'losses/g_loss_adv/test': np.mean(g_loss_adv_),
+            'losses/g_loss_l1/test': np.mean(g_loss_l1_),
+            'losses/g_loss_w/test': np.mean(g_loss_w_),
+            'losses/d_loss/test': np.mean(d_loss_)
+        })
         ref_img = torch.cat([blank] + list(torch.split(ref_images, 1)), dim=3)
         in_out_img = torch.cat([images] + fake_out_li, dim=3)
         res_img = torch.cat([ref_img, in_out_img], dim=0)
 
         self.image_dict.update({
             'images/test': res_img,
-                })
+        })
 
     def update_summary(self):
         # Summarize
@@ -376,9 +300,12 @@ class WeatherTransfer(object):
             spk = k.rsplit('/', 1)
             self.writer.add_scalars(spk[0], {spk[1]: v}, self.global_step)
         for k, v in self.image_dict.items():
-            grid = make_grid(v,
-                    nrow=1,
-                    normalize=True, scale_each=True)
+            grid = make_grid(
+                v,
+                nrow=1,
+                normalize=True,
+                scale_each=True
+            )
             self.writer.add_image(k, grid, self.global_step)
 
     def train(self):
@@ -400,12 +327,20 @@ class WeatherTransfer(object):
 
                 if self.global_step % eval_per_step == 0:
                     out_path = os.path.join(args.save_dir, self.name, ('cUNet_est' + '_e{:04d}_s{}.pt').format(self.epoch, self.global_step))
-                    state_dict = {
+                    if args.multi_gpu and torch.cuda.device_count() > 1:
+                        state_dict = {
+                            'inference': self.inference.module.state_dict(),
+                            'discriminator': self.discriminator.module.state_dict(),
+                            'epoch': self.epoch,
+                            'global_step': self.global_step
+                        }
+                    else:
+                        state_dict = {
                             'inference': self.inference.state_dict(),
                             'discriminator': self.discriminator.state_dict(),
                             'epoch': self.epoch,
                             'global_step': self.global_step
-                            }
+                        }
                     torch.save(state_dict, out_path)
 
                 tqdm_iter.set_description('Training [ {} step ]'.format(self.global_step))
@@ -420,21 +355,13 @@ class WeatherTransfer(object):
                 # torch >= 1.7
                 images = self.train_set.transform(images)
                 rand_images = self.train_set.transform(rand_images)
-
-                # --- master --- #
-                # rand_signals = self.estimator(rand_images).detach()
-                # -------------- #
-                # --- expt 4 --- #
-                rand_signals = r_con
-                # -------------- #
-
                 if images.size(0) != self.batch_size:
                     continue
 
                 # --- TRAINING --- #
                 if (self.global_step - 1) % args.GD_train_ratio == 0:
-                    g_loss, r_loss, w_loss = self.update_inference(images, rand_signals, rand_images)
-                d_loss = self.update_discriminator(images, rand_signals)
+                    g_loss, r_loss, w_loss = self.update_inference(images, r_con, rand_images)
+                d_loss = self.update_discriminator(images, r_con)
                 tqdm_iter.set_postfix(OrderedDict(d_loss=d_loss, g_loss=g_loss, r_loss=r_loss, w_loss=w_loss))
 
                 # --- EVALUATION ---#
