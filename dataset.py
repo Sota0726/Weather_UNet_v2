@@ -1,4 +1,5 @@
 import os
+import random
 
 import pandas as pd
 import torch
@@ -23,6 +24,47 @@ def get_class_id_from_string(string):
     if not string in s_li: raise
     else:
         return s_li.index(string)
+
+
+class ImageFolder(DatasetFolder):
+    def __init__(self, root, transform=None, loader=default_loader):
+        super(ImageFolder, self).__init__(
+            root,
+            transform=transform,
+            extensions='jpg'
+        )
+
+    def __getitem__(self, ind):
+        path, target = self.samples[ind]
+        image = Image.open(path)
+        image = image.convert('RGB')
+        if self.transform:
+            image = self.transform(image)
+        return image, target
+
+
+class ImageLoader(Dataset):
+    def __init__(self, paths, transform=None):
+        super(ImageLoader, self).__init__()
+        self.paths = paths
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.paths)
+
+    def __getitem__(self, idx):
+        try:
+            image = Image.open(self.paths[idx])
+        except:
+            print('load error{}'.format(self.paths[idx]))
+            return self.__getitem__(idx)
+        image = image.convert('RGB')
+        if self.transform:
+            image = self.transform(image)
+        # for train.py
+        return image, self.paths[idx]
+        # for inception_score.py
+        # return image
 
 
 class FlickrDataLoader(Dataset):
@@ -70,7 +112,6 @@ class FlickrDataLoader(Dataset):
         return time_
 
     def __getitem__(self, idx):
-
         # --- GET IMAGE ---#
         # torch > 1.7
         try:
@@ -90,28 +131,92 @@ class FlickrDataLoader(Dataset):
             return image, label, self.photo_id[idx]
 
 
-class ImageLoader(Dataset):
-    def __init__(self, paths, transform=None):
-        super(ImageLoader, self).__init__()
-        self.paths = paths
-        self.transform = transform
+# FlickerDataLoaderから継承するように書き換える
+class SequenceFlickrDataLoader(Dataset):
+    def __init__(self, image_root, csv_root, df, columns, df_mean, df_std,
+                 transform=None, inf=False):
+        super(SequenceFlickrDataLoader, self).__init__()
+        from glob import glob
+        self.root = image_root
+        self.csvs = glob(os.path.join(csv_root, '*.csv'))
+        self.columns = columns
+        self.cities = df['location'].sample(frac=1).to_list()
+        self.utc_dates = df['utc_date'].sample(frac=1).to_list()
+        self.photo_id = df['photo'].to_list()
+        self.conditions = df.loc[:, columns]
+        self.mean = df_mean
+        self.std = df_std
+        self.seq_len = 8
+        self.seq_step = int(24 // self.seq_len)
+        # self.labels = df['condition']
+
+        df['orig_date_h'] = df['orig_date']
+        temp = df['orig_date_h'].str.split(':', expand=True)
+        temp = temp[0].str.split('T', expand=True)
+        df.orig_date_h = temp[1].astype(int)
+        del temp
+        self.time_list = df['orig_date_h'].to_list()
+
+        self.cls_li = ['Clear', 'Clouds', 'Rain', 'Snow', 'Mist']
+        self.num_classes = len(columns)
+        # torch >= 1.7
+        self.transform = transform.to('cuda')
+        self.inf = inf
+        del df
 
     def __len__(self):
-        return len(self.paths)
+        return len(self.photo_id)
+
+    def get_signal(self, idx):
+        sig = self.conditions.iloc[idx].fillna(0).to_list()
+        sig_tensor = torch.from_numpy(np.array(sig)).float()
+        del sig
+        return sig_tensor
+
+    def get_seqence(self, idx):
+        csv_path = [i for i in self.csvs if self.cities[idx] in i]
+        random.shuffle(csv_path)
+        df_ = pd.read_csv(csv_path[0])
+        date_num = len(df_)
+        date = self.utc_dates[idx]
+        try:
+            idx_ = int(df_[df_.utc_date == date].index[0])
+        except:
+            print(date)
+            idx_ = random.randint(0, date_num - 24)
+        df_seq = df_.iloc[idx_: idx_ + 23: self.seq_step]
+        if len(df_seq) != 12:
+            idx_ = random.randint(0, date_num - 24)
+            df_seq = df_.iloc[idx_: idx_ + 23: self.seq_step]
+        df_seq = df_seq.loc[:, self.columns]
+        df_seq = (df_seq.fillna(0) - self.mean) / self.std
+        del df_
+
+        seq = df_seq.values
+        seq_tensor = torch.from_numpy(np.array(seq)).float()
+        del seq
+        return seq_tensor
+
+    def get_time(self, idx):
+        time = self.time_list[idx]
+        time_ = int(time // 6)
+        return time_
 
     def __getitem__(self, idx):
+        # --- GET IMAGE ---#
+        # torch > 1.7
         try:
-            image = Image.open(self.paths[idx])
+            image = read_image(os.path.join(self.root, self.photo_id[idx] + '.jpg'))
         except:
-            print('load error{}'.format(self.paths[idx]))
             return self.__getitem__(idx)
-        image = image.convert('RGB')
-        if self.transform:
-            image = self.transform(image)
-        # for train.py
-        return image, self.paths[idx]
-        # for inception_score.py
-        # return image
+        # --- GET LABEL ---#
+        label = self.get_signal(idx)
+        seq_label = self.get_seqence(idx)
+
+        if not self.inf:
+            return image, label, seq_label
+        elif self.inf:
+            return image, label, seq_label, self.photo_id[idx]
 
 
 class ClassImageLoader(Dataset):
@@ -147,22 +252,6 @@ class ClassImageLoader(Dataset):
             return image, target
         elif self.inf:
             return image, target, self.paths[idx]
-
-
-class ImageFolder(DatasetFolder):
-    def __init__(self, root, transform=None, loader=default_loader):
-        super(ImageFolder, self).__init__(root,
-                transform=transform,
-                extensions='jpg'
-            )
-
-    def __getitem__(self, ind):
-        path, target = self.samples[ind]
-        image = Image.open(path)
-        image = image.convert('RGB')
-        if self.transform:
-            image = self.transform(image)
-        return image, target
 
 
 class OneYearWeatherSignals(Dataset):
@@ -336,4 +425,4 @@ class CelebALoader(Dataset):
         if not self.inf:
             return image, target
         elif self.inf:
-            return image, target, self.paths[idx]
+            return image, target, self.photo_ids[idx]

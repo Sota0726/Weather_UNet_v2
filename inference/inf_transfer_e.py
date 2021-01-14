@@ -23,7 +23,7 @@ parser.add_argument('--estimator_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/estimator/'
                     'est_res101-1203_sampler_pre_WoPerson_sky-10_L-05/est_resnet101_15_step62240.pt')
 parser.add_argument('--input_size', type=int, default=224)
-parser.add_argument('--batch_size', type=int, default=5)
+parser.add_argument('--batch_size', type=int, default=50)
 parser.add_argument('--num_workers', type=int, default=8)
 parser.add_argument('--image_only', action='store_true')
 # args = parser.parse_args(['--pkl_path', '/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/for_inf_10imgs.pkl'])
@@ -126,7 +126,7 @@ if __name__ == '__main__':
     out_li = []
     save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'est',
                              args.cp_path.split('/')[-2],
-                             args.cp_path.split('/')[-1].split('.pt')[0], '10x10')
+                             args.cp_path.split('/')[-1].split('.pt')[0], '50x50')
     os.makedirs(save_path, exist_ok=True)
     for k, (data, rnd) in tqdm(enumerate(zip(loader, random_loader)), total=len(df_sep)//s_bs):
         batch = data[0].to('cuda')
@@ -141,7 +141,7 @@ if __name__ == '__main__':
 
         blank = torch.zeros_like(batch[0]).unsqueeze(0)
         ref_imgs = torch.cat([blank] + list(torch.split(r_batch, 1)), dim=3).to('cpu')
-        save_image(ref_imgs, fp=os.path.join(save_path, 'ref.jpg'), normalize=True, scale_each=True, nrow=1)
+        # save_image(ref_imgs, fp=os.path.join(save_path, 'ref.jpg'), normalize=True, scale_each=True, nrow=1)
         out_l = []
         for i in tqdm(range(r_bs)):
             with torch.no_grad():
