@@ -6,6 +6,7 @@ RUN apt install -y libsm6 libxext6 libxrender-dev
 RUN apt install -y libpng-dev libfreetype6-dev
 RUN apt-get install -y libgl1-mesa-dev
 RUN apt install -y tmux wget curl zip
+RUN apt install -y ffmpeg
 
 RUN pip install -U pip 
 RUN pip install -U pandas pillow

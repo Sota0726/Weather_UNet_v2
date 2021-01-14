@@ -67,6 +67,20 @@ def gen_hinge(dis_fake):
     return torch.mean(-dis_fake)
 
 
+def seq_loss(fake_seq, real_seq, seq_len):
+    loss = []
+    fake_seq = fake_seq.reshape(real_seq.size())
+    bs = real_seq.size(0)
+    for i in range(bs):
+        fake_seq_ = fake_seq[i]
+        real_seq_ = real_seq[i]
+        for j in range(seq_len - 1):
+            _ = (fake_seq_[j] - fake_seq_[j+1]) -\
+                (real_seq_[j] - real_seq_[j+1])
+            loss.append(_ ** 2)
+    return torch.mean(torch.cat(loss))
+
+
 def vector_to_one_hot(vec):
     arg = torch.argmax(vec, 0, keepdim=True)
     one_hot = torch.zeros_like(vec)
@@ -107,7 +121,7 @@ def make_table_img(images, ref_images, results):
 
 
 def make_dataloader(dataset, args):
-    if not args.sampler:
+    if args.sampler == 'none':
         loader = torch.utils.data.DataLoader(
             dataset,
             batch_size=args.batch_size,
@@ -121,7 +135,7 @@ def make_dataloader(dataset, args):
             sampler=TimeImbalancedDatasetSampler(dataset),
             drop_last=True,
             num_workers=args.num_workers)
-    elif args.sampelr == 'condition':
+    elif args.sampelr == 'class':
         loader = torch.utils.data.DataLoader(
             dataset,
             batch_size=args.batch_size,
@@ -133,3 +147,51 @@ def make_dataloader(dataset, args):
         exit()
 
     return loader
+
+
+def make_network(args, num_classes, name):
+    from cunet import Conditional_UNet, Conditional_UNet_V2
+    from disc import SNDisc, SNDisc_, SNResNet64ProjectionDiscriminator, SNResNetProjectionDiscriminator
+    from glob import glob
+
+    if args.generator == 'cUNet':
+        inference = Conditional_UNet(num_classes=num_classes)
+    elif args.generator == 'cUNetV2':
+        inference = Conditional_UNet_V2(num_classes=num_classes)
+    else:
+        print('{} is invalid generator'.format(args.generator))
+        exit()
+
+    if args.disc == 'SNDisc':
+        discriminator = SNDisc(num_classes=num_classes)
+    elif args.disc == 'SNDiscV2':
+        discriminator = SNDisc_(num_classes=num_classes)
+    elif args.disc == 'SNRes64':
+        discriminator = SNResNet64ProjectionDiscriminator(num_classes=num_classes)
+    elif args.disc == 'SNRes':
+        discriminator = SNResNetProjectionDiscriminator(num_classes=num_classes)
+    else:
+        print('{} is invalid discriminator'.format(args.disc))
+        exit()
+
+    if args.resume_cp:
+        exist_cp = [args.resume_cp]
+    else:
+        exist_cp = sorted(glob(os.path.join(args.save_dir, name, '*')))
+
+    if len(exist_cp) != 0:
+        print('Load checkpoint:{}'.format(exist_cp[-1]))
+        sd = torch.load(exist_cp[-1])
+        inference.load_state_dict(sd['inference'])
+        discriminator.load_state_dict(sd['discriminator'])
+        epoch = sd['epoch']
+        global_step = sd['global_step']
+        print('Success checkpoint loading!')
+    else:
+        print('Initialize training status.')
+        epoch = 0
+        global_step = 0
+
+    estimator = torch.load(args.estimator_path)
+
+    return inference, discriminator, estimator, epoch, global_step

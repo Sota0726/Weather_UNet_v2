@@ -2,7 +2,7 @@ import torch
 import torch.utils.data
 import torchvision
 
-from dataset import ImageLoader, FlickrDataLoader, ClassImageLoader
+from dataset import ImageLoader, FlickrDataLoader, ClassImageLoader, SequenceFlickrDataLoader
 
 
 class ImbalancedDatasetSampler(torch.utils.data.sampler.Sampler):
@@ -90,7 +90,7 @@ class TimeImbalancedDatasetSampler(torch.utils.data.sampler.Sampler):
 
     def _get_time(self, dataset, idx):
         dataset_type = type(dataset)
-        if dataset_type is FlickrDataLoader:
+        if dataset_type in [FlickrDataLoader, SequenceFlickrDataLoader]:
             return dataset.get_time(idx)
         else:
             raise NotImplementedError
