@@ -147,6 +147,8 @@ class WeatherTransfer(object):
             self.discriminator = nn.DataParallel(self.discriminator)
             self.estimator = nn.DataParallel(self.estimator)
 
+        self.train_set.transform = self.train_set.transform.to('cuda')
+        self.test_set.transform = self.test_set.transform.to('cuda')
         self.train_loader = make_dataloader(self.train_set, args)
         self.test_loader = make_dataloader(self.test_set, args)
 
@@ -178,7 +180,7 @@ class WeatherTransfer(object):
         images = torch.cat([torch.cat([image.unsqueeze(0)] * seq_len, dim=0) for image in images], dim=0)
         fake_out = self.inference(images, seq_labels_)
         fake_c_out = self.estimator(fake_out)
-        fake_d_out = self.discriminator(fake_out, seq_labels_)
+        fake_d_out = self.discriminator(fake_out, seq_labels_)[0]
 
         # Calc Generator Loss
         g_loss_adv = gen_hinge(fake_d_out)  # Adversarial loss
@@ -204,20 +206,10 @@ class WeatherTransfer(object):
             g_loss.backward()
         self.g_opt.step()
 
-        self.scalar_dict.update({
-            'losses/g_loss/train': g_loss.item(),
-            'losses/g_loss_adv/train': g_loss_adv.item(),
-            'losses/g_loss_l1/train': g_loss_l1.item(),
-            'losses/g_loss_w/train': g_loss_w.item(),
-            'losses/loss_con/train': loss_con.item(),
-            'losses/loss_seq/train': g_loss_seq.item(),
-            'variables/lmda': self.lmda
-        })
-
         self.image_dict.update({
             'io/train': [images.to('cpu'), fake_out.detach().to('cpu')]
         })
-        return g_loss_adv.item(), loss_con.item(), g_loss_w.item(), g_loss_seq.item()
+        return g_loss.item(), g_loss_adv.item(), loss_con.item(), g_loss_w.item(), g_loss_seq.item(), g_loss_l1.item()
 
     def update_discriminator(self, images, labels, seq_labels):
 
@@ -232,9 +224,8 @@ class WeatherTransfer(object):
         pred_labels = pred_labels.float()
         real_d_out_pred = self.discriminator(images, pred_labels)[0]
         # for fake
-        images = torch.cat([torch.cat([image.unsqueeze(0)] * seq_len, dim=0) for image in images], dim=0)
-        fake_out_ = self.inference(images, seq_labels_)
-        fake_d_out_ = self.discriminator(fake_out_, seq_labels_)
+        fake_out_ = self.inference(images, seq_labels_[::seq_len])
+        fake_d_out_ = self.discriminator(fake_out_, seq_labels_[::seq_len])[0]
 
         d_loss = dis_hinge(fake_d_out_, real_d_out_pred)
 
@@ -244,10 +235,6 @@ class WeatherTransfer(object):
         else:
             d_loss.backward()
         self.d_opt.step()
-
-        self.scalar_dict.update({
-            'losses/d_loss/train': d_loss.item()
-        })
 
         return d_loss.item()
 
@@ -260,7 +247,7 @@ class WeatherTransfer(object):
         with torch.no_grad():
             fake_out = self.inference(images, seq_labels_)
             fake_c_out = self.estimator(fake_out)
-            fake_d_out = self.discriminator(fake_out, seq_labels_)
+            fake_d_out = self.discriminator(fake_out, seq_labels_)[0]
 
         g_loss_adv = gen_hinge(fake_d_out)  # Adversarial loss
         g_loss_l1 = l1_loss(fake_out, images)  # L1 Loss
@@ -300,8 +287,8 @@ class WeatherTransfer(object):
             self.writer.add_scalars(spk[0], {spk[1]: v}, self.global_step)
         for k, v in self.image_dict.items():
             images, fake_out = v
-            fake_out_row = make_grid(fake_out, nrow=seq_len, normalize=True, scale_each=True)
-            images_row = make_grid(images[::seq_len], nrow=1, normalize=True, scale_each=True)
+            fake_out_row = make_grid(fake_out.float(), nrow=seq_len, normalize=True, scale_each=True)
+            images_row = make_grid(images[::seq_len].float(), nrow=1, normalize=True, scale_each=True)
             out = torch.cat([images_row, fake_out_row], dim=2)
             self.writer.add_image(k, out, self.global_step)
 
@@ -313,6 +300,14 @@ class WeatherTransfer(object):
         display_per_step = 1000 * args.GD_train_ratio
 
         self.all_step = args.num_epoch * len(self.train_set) // self.batch_size
+
+        g_loss_l = []
+        g_loss_adv_l = []
+        d_loss_l = []
+        g_loss_w_l = []
+        g_loss_con_l = []
+        g_loss_l1_l = []
+        g_loss_seq_l = []
 
         tqdm_iter = trange(args.num_epoch, desc='Training', leave=True)
         for epoch in tqdm_iter:
@@ -355,8 +350,15 @@ class WeatherTransfer(object):
 
                 # --- TRAINING --- #
                 if (self.global_step - 1) % args.GD_train_ratio == 0:
-                    g_loss, r_loss, w_loss, seq_loss = self.update_inference(images, con, seq)
+                    g_loss, g_loss_adv, r_loss, w_loss, seq_loss, l1_loss = self.update_inference(images, con, seq)
+                    g_loss_l.append(g_loss)
+                    g_loss_adv_l.append(g_loss_adv)
+                    g_loss_w_l.append(w_loss)
+                    g_loss_con_l.append(r_loss)
+                    g_loss_seq_l.append(seq_loss)
+                    g_loss_l1_l.append(l1_loss)
                 d_loss = self.update_discriminator(images, con, seq)
+                d_loss_l.append(d_loss)
                 tqdm_iter.set_postfix(OrderedDict(
                     d_loss=d_loss,
                     g_loss=g_loss,
@@ -367,7 +369,22 @@ class WeatherTransfer(object):
 
                 # --- EVALUATION ---#
                 if (self.global_step % eval_per_step == 0):
+                    self.scalar_dict.update({
+                        'losses/g_loss/train': np.mean(g_loss_l[-100:]),
+                        'losses/g_loss_adv/train': np.mean(g_loss_adv_l[-100:]),
+                        'losses/g_loss_l1/train': np.mean(g_loss_l1_l[-100:]),
+                        'losses/g_loss_w/train': np.mean(g_loss_w_l[-100:]),
+                        'losses/loss_con/train': np.mean(g_loss_con_l[-100:]),
+                        'losses/loss_seq/train': np.mean(g_loss_seq_l[-100:]),
+                        'losses/d_loss/train': np.mean(d_loss_l[-100:])
+                    })
                     self.evaluation()
+                    g_loss_adv_l = []
+                    d_loss_l = []
+                    g_loss_w_l = []
+                    g_loss_con_l = []
+                    g_loss_l1_l = []
+                    g_loss_seq_l = []
 
                 # --- UPDATE SUMMARY ---#
                 if self.global_step % display_per_step == 0:

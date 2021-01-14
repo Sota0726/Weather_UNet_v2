@@ -139,6 +139,8 @@ class WeatherTransfer(object):
             self.discriminator = nn.DataParallel(self.discriminator)
             self.estimator = nn.DataParallel(self.estimator)
 
+        self.train_set.transform = self.train_set.transform.to('cuda')
+        self.test_set.transform = self.test_set.transform.to('cuda')
         self.random_loader = make_dataloader(self.train_set, args)
         args.sampler = False
         self.train_loader = make_dataloader(self.train_set, args)

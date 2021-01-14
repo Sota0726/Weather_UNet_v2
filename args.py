@@ -47,19 +47,30 @@ def get_args():
     parser.add_argument('--GD_train_ratio', type=int, default=5)
     parser.add_argument(
         '--sampler',
-        choices=['time', 'class', 'none']
+        choices=['time', 'class', 'none'],
+        default='none'
     )
     parser.add_argument('--resume_cp', type=str)
     parser.add_argument('-ww', '--wloss_weight', type=int, nargs=8, default=[1, 1, 1, 1, 1, 1, 1, 1])
     parser.add_argument(
-        '-wt',
-        '--wloss_type',
-        choices=['mse', 'CE', 'weightedMSE', 'L1', 'BCE']
+        '-wt', '--wloss_type',
+        choices=['mse', 'CE', 'weightedMSE', 'L1', 'BCE'],
+        default='mse'
     )
     parser.add_argument('--amp', action='store_true')
     parser.add_argument('--multi_gpu', action='store_true')
-    parser.add_argument('-g', '--generator', type=str, default='cUNet')
-    parser.add_argument('-d', '--disc', type=str, default='SNDisc')
+    parser.add_argument(
+        '-g', '--generator',
+        type=str,
+        choices=['cUNet', 'cUNetV2'],
+        default='cUNet'
+    )
+    parser.add_argument(
+        '-d', '--disc',
+        type=str,
+        choices=['SNDisc', 'SNDiscV2', 'SNRes64', 'SNRes'],
+        default='SNDisc'
+    )
     args = parser.parse_args()
     # args = parser.parse_args(args=['--name', 'debug', '--multi_gpu'])
 

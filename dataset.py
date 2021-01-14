@@ -146,7 +146,7 @@ class SequenceFlickrDataLoader(Dataset):
         self.conditions = df.loc[:, columns]
         self.mean = df_mean
         self.std = df_std
-        self.seq_len = 8
+        self.seq_len = 12
         self.seq_step = int(24 // self.seq_len)
         # self.labels = df['condition']
 
@@ -160,7 +160,7 @@ class SequenceFlickrDataLoader(Dataset):
         self.cls_li = ['Clear', 'Clouds', 'Rain', 'Snow', 'Mist']
         self.num_classes = len(columns)
         # torch >= 1.7
-        self.transform = transform.to('cuda')
+        self.transform = transform
         self.inf = inf
         del df
 
@@ -184,10 +184,10 @@ class SequenceFlickrDataLoader(Dataset):
         except:
             print(date)
             idx_ = random.randint(0, date_num - 24)
-        df_seq = df_.iloc[idx_: idx_ + 23: self.seq_step]
-        if len(df_seq) != 12:
+        df_seq = df_.iloc[idx_: idx_ + 24: self.seq_step]
+        if len(df_seq) != self.seq_len:
             idx_ = random.randint(0, date_num - 24)
-            df_seq = df_.iloc[idx_: idx_ + 23: self.seq_step]
+            df_seq = df_.iloc[idx_: idx_ + 24: self.seq_step]
         df_seq = df_seq.loc[:, self.columns]
         df_seq = (df_seq.fillna(0) - self.mean) / self.std
         del df_
@@ -199,7 +199,11 @@ class SequenceFlickrDataLoader(Dataset):
 
     def get_time(self, idx):
         time = self.time_list[idx]
-        time_ = int(time // 6)
+        time_ = int(time // 3)
+        if time_ > 2 and time_ < 6:
+            time_ = 3
+        elif time_ >= 6:
+            time_ -= 2
         return time_
 
     def __getitem__(self, idx):
