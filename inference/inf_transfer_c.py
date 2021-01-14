@@ -16,9 +16,6 @@ parser.add_argument('--image_root', type=str,
                     default='/mnt/fs2/2018/matsuzaki/dataset_fromnitta/Image/')
 parser.add_argument('--pkl_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/i2w/sepalated_data.pkl')
-parser.add_argument('--output_dir', '-o', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/results/eval_class_transfer/'
-                    'cUNet_w-c-res101-0317_img-i2w_train-D1T1_aug_supervised_shuffle_adam-b1-09_wloss_CrossEnt_e0035_s132000/out')
 parser.add_argument('--cp_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/transfer/'
                     # 'cUNet_w-c-res101-0317_img-flicker-200k_aug_shuffle_adam-b1-09_wloss-CrossEnt/cUNet_w-c-res101-0317_img-flicker-200k_aug_shuffle_adam-b1-09_wloss-CrossEnt_e0025_s324000.pt')
