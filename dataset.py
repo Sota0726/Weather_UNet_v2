@@ -88,7 +88,7 @@ class FlickrDataLoader(Dataset):
         self.cls_li = ['Clear', 'Clouds', 'Rain', 'Snow', 'Mist']
         self.num_classes = len(columns)
         # torch >= 1.7
-        self.transform = transform.to('cuda')
+        self.transform = transform
         del df
         self.inf = inf
 
@@ -407,7 +407,7 @@ class CelebALoader(Dataset):
         self.root = root_path
         self.classes = df.loc[:, self.cols]
         self.num_classes = len(self.cols)
-        self.transform = transform.to('cuda')
+        self.transform = transform
         self.inf = inf
 
     def get_class(self, idx):

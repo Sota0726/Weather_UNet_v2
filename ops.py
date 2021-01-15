@@ -135,7 +135,7 @@ def make_dataloader(dataset, args):
             sampler=TimeImbalancedDatasetSampler(dataset),
             drop_last=True,
             num_workers=args.num_workers)
-    elif args.sampelr == 'class':
+    elif args.sampler == 'class':
         loader = torch.utils.data.DataLoader(
             dataset,
             batch_size=args.batch_size,

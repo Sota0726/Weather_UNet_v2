@@ -9,6 +9,16 @@ def get_args():
         default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017'
     )
     parser.add_argument(
+        '--i2w_root',
+        type=str,
+        default='/mnt/fs2/2018/matsuzaki/dataset_fromnitta/Image/'
+    )
+    parser.add_argument(
+        '--celebA_root',
+        type=str,
+        default='/mnt/fs2/2019/Takamuro/db/CelebA/Img/img_align_celeba'
+    )
+    parser.add_argument(
         '--csv_root',
         type=str,
         default='/mnt/HDD8T/takamuro/dataset/wwo/2016_2017/'
@@ -18,6 +28,16 @@ def get_args():
         type=str,
         default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/'
         'outdoor_all_dbdate_wwo_weather_2016_17_delnoise_WoPerson_sky-10_L-05.pkl'
+    )
+    parser.add_argument(
+        '--i2w_pkl_path',
+        type=str,
+        default='/mnt/fs2/2019/Takamuro/db/i2w/sepalated_data.pkl'
+    )
+    parser.add_argument(
+        '--celebA_pkl_path',
+        type=str,
+        default='/mnt/fs2/2019/Takamuro/db/CelebA/Anno/list_attr_celeba_add-mode.pkl'
     )
     parser.add_argument(
         '--estimator_path',
@@ -32,7 +52,15 @@ def get_args():
         'cls_res101_1122_NotPreTrain/resnet101_epoch15_step59312.pt'
     )
     parser.add_argument('--save_dir', type=str, default='cp/transfer')
-    parser.add_argument('--gpu', type=str, default='0, 1')
+    parser.add_argument('--est_save_dir', type=str, default='cp/estimator')
+    parser.add_argument('--cls_save_dir', type=str, default='cp/classifier')
+    parser.add_argument(
+        '--dataset',
+        type=str,
+        choices=['flickr', 'i2w', 'celebA'],
+        default='flickr')
+    parser.add_argument('--gpu', type=str, default='0')
+    parser.add_argument('--data_mode', type=str, choices=['T', 'E'], default='T')
     parser.add_argument('--name', type=str, default='cUNet')
     # Nmaing rule : cUNet_[c(classifier) or e(estimator)]_[detail of condition]_[epoch]_[step]
     parser.add_argument('--input_size', type=int, default=224)
@@ -45,6 +73,7 @@ def get_args():
     parser.add_argument('--batch_size', '-bs', type=int, default=4)
     parser.add_argument('--num_workers', type=int, default=8)
     parser.add_argument('--GD_train_ratio', type=int, default=5)
+    parser.add_argument('--train_data_ratio', type=float, default=0.5)
     parser.add_argument(
         '--sampler',
         choices=['time', 'class', 'none'],
@@ -59,6 +88,7 @@ def get_args():
     )
     parser.add_argument('--amp', action='store_true')
     parser.add_argument('--multi_gpu', action='store_true')
+    parser.add_argument('--pre_trained', action='store_true')
     parser.add_argument(
         '-g', '--generator',
         type=str,
@@ -70,6 +100,12 @@ def get_args():
         type=str,
         choices=['SNDisc', 'SNDiscV2', 'SNRes64', 'SNRes'],
         default='SNDisc'
+    )
+    parser.add_argument(
+        '--predictor',
+        type=str,
+        choices=['resnet', 'mobilenet', 'resnext', 'wideresnet'],
+        default='resnet'
     )
     args = parser.parse_args()
     # args = parser.parse_args(args=['--name', 'debug', '--multi_gpu'])
