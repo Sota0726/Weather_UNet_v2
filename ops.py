@@ -71,13 +71,8 @@ def seq_loss(fake_seq, real_seq, seq_len):
     loss = []
     fake_seq = fake_seq.reshape(real_seq.size())
     bs = real_seq.size(0)
-    for i in range(bs):
-        fake_seq_ = fake_seq[i]
-        real_seq_ = real_seq[i]
-        for j in range(seq_len - 1):
-            _ = (fake_seq_[j] - fake_seq_[j+1]) -\
-                (real_seq_[j] - real_seq_[j+1])
-            loss.append(_ ** 2)
+    loss = [(fake_seq[i, j] - fake_seq[i, j+1]) - (real_seq[i, j] - real_seq[i, j+1])
+            for i in range(bs) for j in range(seq_len - 1)]
     return torch.mean(torch.cat(loss))
 
 
@@ -120,28 +115,39 @@ def make_table_img(images, ref_images, results):
     return res_img
 
 
-def make_dataloader(dataset, args):
+def make_dataloader(dataset, args, mode='train'):
+    if mode == 'test':
+        loader = torch.utils.data.DataLoader(
+            dataset,
+            batch_size=dataset.bs,
+            num_workers=args.num_workers,
+            pin_memory=True)
+        return loader
+
     if args.sampler == 'none':
         loader = torch.utils.data.DataLoader(
             dataset,
-            batch_size=args.batch_size,
+            batch_size=dataset.bs,
             shuffle=True,
             drop_last=True,
-            num_workers=args.num_workers)
+            num_workers=args.num_workers,
+            pin_memory=True)
     elif args.sampler == 'time':
         loader = torch.utils.data.DataLoader(
             dataset,
-            batch_size=args.batch_size,
+            batch_size=dataset.bs,
             sampler=TimeImbalancedDatasetSampler(dataset),
             drop_last=True,
-            num_workers=args.num_workers)
+            num_workers=args.num_workers,
+            pin_memory=True)
     elif args.sampler == 'class':
         loader = torch.utils.data.DataLoader(
             dataset,
-            batch_size=args.batch_size,
+            batch_size=dataset.bs,
             sampler=ImbalancedDatasetSampler(dataset),
             drop_last=True,
-            num_workers=args.num_workers)
+            num_workers=args.num_workers,
+            pin_memory=True)
     else:
         print('{} is invalid sampler name'.format(args.sampler))
         exit()

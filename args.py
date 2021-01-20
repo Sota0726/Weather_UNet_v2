@@ -30,6 +30,12 @@ def get_args():
         'outdoor_all_dbdate_wwo_weather_2016_17_delnoise_WoPerson_sky-10_L-05.pkl'
     )
     parser.add_argument(
+        '--test_pkl_path',
+        type=str,
+        default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/'
+        'for_test_training.pkl'
+    )
+    parser.add_argument(
         '--i2w_pkl_path',
         type=str,
         default='/mnt/fs2/2019/Takamuro/db/i2w/sepalated_data.pkl'
@@ -71,7 +77,7 @@ def get_args():
     parser.add_argument('--lmda', type=float, default=None)
     parser.add_argument('--num_epoch', type=int, default=150)
     parser.add_argument('--batch_size', '-bs', type=int, default=4)
-    parser.add_argument('--num_workers', type=int, default=8)
+    parser.add_argument('--num_workers', type=int, default=16)
     parser.add_argument('--GD_train_ratio', type=int, default=5)
     parser.add_argument('--train_data_ratio', type=float, default=0.5)
     parser.add_argument(
@@ -108,6 +114,6 @@ def get_args():
         default='resnet'
     )
     args = parser.parse_args()
-    # args = parser.parse_args(args=['--name', 'debug', '--multi_gpu'])
+    # args = parser.parse_args(args=['--name', 'debug', '--multi_gpu', '--gpu', '0,1,2,3'])
 
     return args

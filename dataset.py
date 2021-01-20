@@ -133,20 +133,26 @@ class FlickrDataLoader(Dataset):
 
 # FlickerDataLoaderから継承するように書き換える
 class SequenceFlickrDataLoader(Dataset):
-    def __init__(self, image_root, csv_root, df, columns, df_mean, df_std,
-                 transform=None, inf=False):
+    def __init__(self, image_root, csv_root, df, columns, df_mean, df_std, bs,
+                 transform=None, inf=False, mode='train'):
         super(SequenceFlickrDataLoader, self).__init__()
-        from glob import glob
         self.root = image_root
-        self.csvs = glob(os.path.join(csv_root, '*.csv'))
+        self.csv_root = csv_root
+        self.inf = inf
         self.columns = columns
-        self.cities = df['location'].sample(frac=1).to_list()
-        self.utc_dates = df['utc_date'].sample(frac=1).to_list()
+        if mode == 'train':
+            self.locations = df[['location', 'lon', 'lat']].sample(frac=1)
+            self.utc_dates = df['utc_date'].sample(frac=1).to_list()
+        elif mode == 'test':
+            self.locations = df[['location', 'lon', 'lat']]
+            self.utc_dates = df['utc_date'].to_list()
+            self.inf = True
         self.photo_id = df['photo'].to_list()
         self.conditions = df.loc[:, columns]
         self.mean = df_mean
         self.std = df_std
         self.seq_len = 12
+        self.bs = bs
         self.seq_step = int(24 // self.seq_len)
         # self.labels = df['condition']
 
@@ -161,7 +167,6 @@ class SequenceFlickrDataLoader(Dataset):
         self.num_classes = len(columns)
         # torch >= 1.7
         self.transform = transform
-        self.inf = inf
         del df
 
     def __len__(self):
@@ -174,19 +179,22 @@ class SequenceFlickrDataLoader(Dataset):
         return sig_tensor
 
     def get_seqence(self, idx):
-        csv_path = [i for i in self.csvs if self.cities[idx] in i]
-        random.shuffle(csv_path)
-        df_ = pd.read_csv(csv_path[0])
-        date_num = len(df_)
+        locations = self.locations.iloc[idx]
+        city = locations['location']
+        lon = round(locations['lon'], 6)
+        lat = round(locations['lat'], 6)
+        csv = '{}({},{}).csv'.format(city, str(lon), str(lat))
+        df_ = pd.read_csv(os.path.join(self.csv_root, csv))
+        csv_date_num = len(df_)
         date = self.utc_dates[idx]
         try:
             idx_ = int(df_[df_.utc_date == date].index[0])
         except:
             print(date)
-            idx_ = random.randint(0, date_num - 24)
+            idx_ = random.randint(0, csv_date_num - 24)
         df_seq = df_.iloc[idx_: idx_ + 24: self.seq_step]
         if len(df_seq) != self.seq_len:
-            idx_ = random.randint(0, date_num - 24)
+            idx_ = random.randint(0, csv_date_num - 24)
             df_seq = df_.iloc[idx_: idx_ + 24: self.seq_step]
         df_seq = df_seq.loc[:, self.columns]
         df_seq = (df_seq.fillna(0) - self.mean) / self.std
@@ -210,7 +218,7 @@ class SequenceFlickrDataLoader(Dataset):
         # --- GET IMAGE ---#
         # torch > 1.7
         try:
-            image = read_image(os.path.join(self.root, self.photo_id[idx] + '.jpg'))
+            image = read_image(os.path.join(self.root, str(self.photo_id[idx]) + '.jpg'))
         except:
             return self.__getitem__(idx)
         # --- GET LABEL ---#
@@ -220,7 +228,7 @@ class SequenceFlickrDataLoader(Dataset):
         if not self.inf:
             return image, label, seq_label
         elif self.inf:
-            return image, label, seq_label, self.photo_id[idx]
+            return image, label, seq_label, str(self.photo_id[idx])
 
 
 class ClassImageLoader(Dataset):
@@ -256,57 +264,6 @@ class ClassImageLoader(Dataset):
             return image, target
         elif self.inf:
             return image, target, self.paths[idx]
-
-
-class OneYearWeatherSignals(Dataset):
-    def __init__(self, image_root, df, columns, photo_id, transform=None, name=None):
-        super(OneYearWeatherSignals, self).__init__()
-        # init
-        self.root = image_root
-        self.columns = columns
-        self.photo_id = photo_id
-        self.transform = transform
-
-        if name is not None:
-            self.name = name
-        else:
-            self.name = df[df['photo'] == self.photo_id]['name'].to_list()[0]
-
-        self.num_classes = len(columns)
-        self.conditions, self.s_times = self.get_oneyear_data(self.name, df)
-
-        del df
-
-        try:
-            self.image = Image.open(os.path.join(self.root, self.photo_id + '.jpg'))
-        except:
-            print('no photo id')
-            exit()
-        self.image = self.image.convert('RGB')
-        if self.transform:
-            self.image = self.transform(self.image)
-
-    def __len__(self):
-        return len(self.conditions)
-
-    def get_oneyear_data(self, name, df):
-        df = df[df['name'] == name].drop_duplicates(subset=['s_unixtime'])
-        df = df.sort_values('s_unixtime', ascending=False).reset_index()
-        s_times = df['s_unixtime']
-        df = df.loc[:, self.columns]
-
-        return df, s_times
-
-    def get_condition(self, idx):
-        c = self.conditions.iloc[idx].fillna(0).to_list()
-        c_tensor = torch.from_numpy(np.array(c)).float()
-        del c
-        return c_tensor
-
-    def __getitem__(self, idx):
-        sig = self.get_condition(idx)
-        s_time = self.s_times[idx]
-        return self.image, sig, s_time
 
 
 class SensorLoader(Dataset):
