@@ -344,8 +344,8 @@ class WeatherTransfer(object):
         args = self.args
 
         # train setting
-        eval_per_step = 1 * args.GD_train_ratio
-        display_per_step = 1 * args.GD_train_ratio
+        eval_per_step = 1000 * args.GD_train_ratio
+        display_per_step = 1000 * args.GD_train_ratio
 
         self.all_step = args.num_epoch * len(self.train_set) // self.batch_size
 

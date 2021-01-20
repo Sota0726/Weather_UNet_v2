@@ -79,6 +79,7 @@ def sn_double_conv(in_channels, out_channels):
         nn.LeakyReLU(0.2, inplace=True)
     )
 
+
 # refarence code https://github.com/crcrpar/pytorch.sngan_projection 
 class Block(nn.Module):
 
