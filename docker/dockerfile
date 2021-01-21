@@ -4,17 +4,18 @@ RUN apt update && apt install -y sudo git
 RUN apt install -y software-properties-common
 RUN apt install -y libsm6 libxext6 libxrender-dev
 RUN apt install -y libpng-dev libfreetype6-dev
-RUN apt-get install -y libgl1-mesa-dev
+RUN apt install -y libgl1-mesa-dev
 RUN apt install -y tmux wget curl zip
 RUN apt install -y ffmpeg
 
 RUN pip install -U pip 
-RUN pip install -U pandas pillow
-RUN pip install tqdm flake8
-RUN pip install seaborn scikit-learn
-RUN pip install shape-commentator future
-RUN pip install jupyter 
-RUN pip install -U  opencv-python
+RUN pip install -U tqdm flake8
+RUN pip install -U scikit-learn
+RUN pip install -U future
+RUN pip install -U jupyter 
+RUN pip install -U opencv-python
+RUN pip uninstall -y pillow pandas
+RUN conda install -y seaborn
 
 RUN mkdir /mnt/fs2
 RUN mkdir -p /mnt/HDD8T/takamuro
