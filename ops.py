@@ -71,7 +71,7 @@ def seq_loss(fake_seq, real_seq, seq_len):
     loss = []
     fake_seq = fake_seq.reshape(real_seq.size())
     bs = real_seq.size(0)
-    loss = [(fake_seq[i, j] - fake_seq[i, j+1]) - (real_seq[i, j] - real_seq[i, j+1])
+    loss = [torch.abs((fake_seq[i, j] - fake_seq[i, j+1]) - (real_seq[i, j] - real_seq[i, j+1]))
             for i in range(bs) for j in range(seq_len - 1)]
     return torch.mean(torch.cat(loss))
 
@@ -191,7 +191,7 @@ def make_network(args, num_classes, name):
         inference.load_state_dict(sd['inference'])
         discriminator.load_state_dict(sd['discriminator'])
         epoch = sd['epoch']
-        global_step = sd['global_step']
+        global_step = sd['global_step'] - 1
         print('Success checkpoint loading!')
     else:
         print('Initialize training status.')

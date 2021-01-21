@@ -234,7 +234,7 @@ class WeatherTransfer(object):
         return d_loss.item()
 
     def eval_each_sig_effect(self, images, labels, photo):
-        os.makedirs(os.path.join('runs', self.name, str(self.global_step)), exist_ok=True)
+        os.makedirs(os.path.join('runs', self.name, 'step_' + str(self.global_step)), exist_ok=True)
         test_bs = images.size(0)
         for i in range(test_bs):
             out_l = []
@@ -244,7 +244,7 @@ class WeatherTransfer(object):
                 image_expand = torch.cat([images[i].unsqueeze(0)] * self.sig_step_num, dim=0)
                 out = self.inference(image_expand, sig_expand).detach().to('cpu')
                 out_l.append(out)
-            outs = torch.cat(out_l, dim=2)
+            outs = torch.cat(out_l, dim=2).float()
             save_image(
                 outs,
                 fp=os.path.join('runs', self.name, 'step_' + str(self.global_step), photo[i] + '.png'),
@@ -258,7 +258,7 @@ class WeatherTransfer(object):
         test_bs = images.size(0)
         seq_labels_ = seq_labels.view(-1, self.num_classes)
         bs_seq = test_bs * seq_len
-        images_ = torch.cat([images[0].unsqueeze(0)] * bs_seq, dim=0)
+        images_ = torch.cat([images[1].unsqueeze(0)] * bs_seq, dim=0)
         out = self.inference(images_, seq_labels_).detach().to('cpu').float()
         images_ = images_.to('cpu').float()
         fake_out_row = make_grid(out, nrow=seq_len, normalize=True, scale_each=True)
@@ -338,7 +338,7 @@ class WeatherTransfer(object):
                 out = torch.cat([images_row, fake_out_row], dim=2)
                 self.writer.add_image(k, out, self.global_step)
             else:
-                self.writer.add_image(k, out, self.global_step)
+                self.writer.add_image(k, v, self.global_step)
 
     def train(self):
         args = self.args
@@ -399,7 +399,7 @@ class WeatherTransfer(object):
                     continue
 
                 # --- TRAINING --- #
-                if (self.global_step - 1) % args.GD_train_ratio == 0:
+                if self.global_step % args.GD_train_ratio == 0:
                     g_loss, g_loss_adv, r_loss, w_loss, seq_loss, l1_loss = self.update_inference(images, con, seq)
                     g_loss_l.append(g_loss)
                     g_loss_adv_l.append(g_loss_adv)
