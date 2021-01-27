@@ -295,4 +295,6 @@ def gather_tensor(tensor, args):
     # dist.gather(rt, dst=0, gather_list=tensor_l, group=group)
     dist.all_gather(tensor_l, rt, group=group)
 
+    # tensor_l: list length=args.world_size (num gpus)
+    # if you want to get batch tensor, you should do torch.cat(tensor_l, dim=0)
     return tensor_l

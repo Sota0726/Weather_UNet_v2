@@ -274,9 +274,9 @@ class WeatherTransfer(object):
             losses_ = [loss.item() for loss in losses]
 
         if self.global_step % self.display_per_step == 0:
-            # if self.args.distributed:
-            #     images = gather_tensor(images, self.args)[0]
-            #     fake_out = gather_tensor(fake_out, self.args)[0]
+            if self.args.distributed:
+                images = torch.cat(gather_tensor(images, self.args), dim=0)
+                fake_out = torch.cat(gather_tensor(fake_out, self.args), dim=0)
             if self.args.local_rank == 0:
                 self.image_dict.update({
                     'io/train': [images.cpu(), fake_out.cpu()]
