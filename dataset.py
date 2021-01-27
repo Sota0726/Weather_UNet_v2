@@ -319,7 +319,7 @@ class TimeLapseLoader(Dataset):
         self.bs = bs
         self.transform = transform
         if transform is not None:
-            self.transform = transform.to('cuda')
+            self.transform = transform
 
     def __len__(self):
         return len(self.vid24s)

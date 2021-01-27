@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+import torch.distributed as dist
 import numpy as np
 from sampler import ImbalancedDatasetSampler, TimeImbalancedDatasetSampler
 # import cupy as cp
@@ -116,14 +117,14 @@ def make_table_img(images, ref_images, results):
 
 
 def make_dataloader(dataset, args, mode='train', sampler=None):
-    if args.distributed and sampler is not None:
+    if args.distributed:
         loader = torch.utils.data.DataLoader(
             dataset,
             batch_size=dataset.bs,
-            shuffle=True,
-            sampler=sampler,
+            shuffle=(sampler is None),
             num_workers=args.num_workers,
-            pin_memory=True
+            pin_memory=True,
+            sampler=sampler
         )
     elif mode == 'test':
         loader = torch.utils.data.DataLoader(
@@ -278,3 +279,20 @@ def make_seq_network(args, num_classes, name):
     estimator = torch.load(args.estimator_path)
 
     return inference, discriminator, seq_disc, estimator, epoch, global_step
+
+
+def reduce_tensor(tensor, args):
+    rt = tensor.clone()
+    dist.all_reduce(rt, op=dist.reduce_op.SUM)
+    rt /= args.world_size
+    return rt
+
+
+def gather_tensor(tensor, args):
+    group = dist.group.WORLD
+    rt = tensor.clone()
+    tensor_l = [torch.zeros_like(rt) for _ in range(args.world_size)]
+    # dist.gather(rt, dst=0, gather_list=tensor_l, group=group)
+    dist.all_gather(tensor_l, rt, group=group)
+
+    return tensor_l
