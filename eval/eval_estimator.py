@@ -153,7 +153,7 @@ if __name__ == '__main__':
     transform = nn.Sequential(
         transforms.ConvertImageDtype(torch.float32),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-        )
+    )
 
     transform_rgb = transforms.Compose([
         transforms.ToTensor(),
@@ -163,11 +163,11 @@ if __name__ == '__main__':
     dataset = FlickrDataLoader(args.image_root, df, cols, transform=transform, inf=True)
 
     loader = torch.utils.data.DataLoader(
-            dataset,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            drop_last=True
-            )
+        dataset,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        drop_last=True
+    )
 
     # load model
     estimator = torch.load(args.estimator_path)
@@ -196,38 +196,38 @@ if __name__ == '__main__':
         y_true_l.append(signals)
         y_pred_l.append(preds)
 
-        # for j in range(bs):
-        #     signal = signals[j]
-        #     pred = preds[j]
+        for j in range(bs):
+            signal = signals[j]
+            pred = preds[j]
 
-        #     gt_img = Image.new('RGB', (args.input_size,) * 2, (0, 0, 0))
-        #     pred_img = Image.new('RGB', (args.input_size,) * 2, (0, 0, 0))
+            # gt_img = Image.new('RGB', (args.input_size,) * 2, (0, 0, 0))
+            # pred_img = Image.new('RGB', (args.input_size,) * 2, (0, 0, 0))
 
-        #     draw_gt = ImageDraw.Draw(gt_img)
-        #     draw_pred = ImageDraw.Draw(pred_img)
-        #     draw_gt.text((0, 0), 'gt signal', font=font, fill=(200, 200, 200))
-        #     draw_pred.text((0, 0), 'pred signal', font=font, fill=(200, 200, 200))
+            # draw_gt = ImageDraw.Draw(gt_img)
+            # draw_pred = ImageDraw.Draw(pred_img)
+            # draw_gt.text((0, 0), 'gt signal', font=font, fill=(200, 200, 200))
+            # draw_pred.text((0, 0), 'pred signal', font=font, fill=(200, 200, 200))
 
-        #     ind_df = df[df.photo == photo_ids[j]].index[0]
+            ind_df = df[df.photo == photo_ids[j]].index[0]
 
-        #     for k in range(num_classes):
-        #         signal_ = signal[k].item() * df_std[k] + df_mean[k]
-        #         pred_ = pred[k].item() * df_std[k] + df_mean[k]
-        #         gt_text = '{} = {}'.format(cols[k], signal_)
-        #         pred_text = '{} = {}'.format(cols[k], pred_)
+            for k in range(num_classes):
+                signal_ = signal[k].item() * df_std[k] + df_mean[k]
+                pred_ = pred[k].item() * df_std[k] + df_mean[k]
+                # gt_text = '{} = {}'.format(cols[k], signal_)
+                # pred_text = '{} = {}'.format(cols[k], pred_)
 
-        #         k_ = k + 1
-        #         draw_gt.text((0, k_ * 14), gt_text, font=font, fill=(200, 200, 200))
-        #         draw_pred.text((0, k_ * 14), pred_text, font=font, fill=(200, 200, 200))
+                # k_ = k + 1
+                # draw_gt.text((0, k_ * 14), gt_text, font=font, fill=(200, 200, 200))
+                # draw_pred.text((0, k_ * 14), pred_text, font=font, fill=(200, 200, 200))
 
-        #         df.loc[ind_df, 'pred_{}'.format(cols[k])] = pred_
+                df.loc[ind_df, 'pred_{}'.format(cols[k])] = pred_
 
-        #     t_gt_img = transform_rgb(gt_img)
-        #     t_pred_img = transform_rgb(pred_img)
-        #     output = torch.cat([batch[j], t_gt_img, t_pred_img], dim=2)
+            # t_gt_img = transform_rgb(gt_img)
+            # t_pred_img = transform_rgb(pred_img)
+            # output = torch.cat([batch[j], t_gt_img, t_pred_img], dim=2)
 
-        #     fp = os.path.join(save_path, 'input_imgs', photo_ids[j] + '.jpg')
-        #     save_image(output, fp=fp, normalize=True)
+            # fp = os.path.join(save_path, 'input_imgs', photo_ids[j] + '.jpg')
+            # save_image(output, fp=fp, normalize=True)
 
     y_true_l = torch.cat(y_true_l, dim=0).numpy()
     y_pred_l = torch.cat(y_pred_l, dim=0).numpy()
@@ -239,8 +239,8 @@ if __name__ == '__main__':
     ave_l1 = np.mean(l1_li, axis=0)
     std_l1 = np.std(l1_li, axis=0)
 
-    # df.loc[:, cols] = df_.loc[:, cols]
-    # df.to_pickle(os.path.join(save_path, mode + '_result.pkl'))
+    df.loc[:, cols] = df_.loc[:, cols]
+    df.to_pickle(os.path.join(save_path, mode + '_result.pkl'))
 
     print(cols)
     print('l1')
