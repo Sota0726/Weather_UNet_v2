@@ -154,6 +154,7 @@ class WeatherTransfer(object):
 
         args.distributed = False
         self.train_loader = make_dataloader(self.train_set, args)
+        args.sampler = 'none'
         seq_loader = make_dataloader(self.seq_set, args)
         seq_loader = iter(seq_loader)
         self.seq_test_samples = seq_loader.__next__()
@@ -176,19 +177,17 @@ class WeatherTransfer(object):
         seq_len = self.train_set.seq_len
         seq_labels_ = seq_labels.view(-1, self.num_classes)
         # for real
-        pred_labels = self.estimator(images).detach()
+        pred_labels = self.estimator(images[::seq_len]).detach()
         pred_labels = torch.minimum(self.sig_max, pred_labels)
         pred_labels = torch.maximum(self.sig_min, pred_labels)
         pred_labels = pred_labels.float()
 
-        # images = torch.cat([torch.cat([image.unsqueeze(0)] * seq_len, dim=0) for image in images], dim=0)
-        # (bs, c, w, h) -> (bs, seq_len, c, w, h) -> (bs* seq_len, c, w, h)
-        images = images.unsqueeze(1).repeat(1, seq_len, 1, 1, 1).view(-1, 3, self.args.input_size, self.args.input_size)
         fake_out = self.inference(images, seq_labels_)
         fake_c_out = self.estimator(fake_out)
         fake_d_out = self.discriminator(fake_out, seq_labels_)[0]
         # (bs, c , seq_len, w, h)
         fake_seq_out = fake_out.view(self.batch_size, -1, 3, self.args.input_size, self.args.input_size).clone()
+        # (bs, c, seq_len, w, h)
         fake_seq_out = torch.transpose(fake_seq_out, 1, 2)
         fake_seq_d_out = self.seq_disc(fake_seq_out)
 
@@ -236,15 +235,13 @@ class WeatherTransfer(object):
         seq_len = self.train_set.seq_len
         seq_labels_ = seq_labels.view(-1, self.num_classes)
         # for real
-        pred_labels = self.estimator(images).detach()
+        pred_labels = self.estimator(images[::seq_len]).detach()
         pred_labels = torch.minimum(self.sig_max, pred_labels)
         pred_labels = torch.maximum(self.sig_min, pred_labels)
         pred_labels = pred_labels.float()
-        real_d_out_pred = self.discriminator(images, pred_labels)[0]
+        real_d_out_pred = self.discriminator(images[::seq_len], pred_labels)[0]
+
         # for fake
-        # images = torch.cat([torch.cat([image.unsqueeze(0)] * seq_len, dim=0) for image in images], dim=0)
-        # (bs, c, w, h) -> (bs, seq_len, c, w, h) -> (bs* seq_len, c, w, h)
-        images = images.unsqueeze(1).repeat(1, seq_len, 1, 1, 1).view(-1, 3, self.args.input_size, self.args.input_size)
         fake_seq_out = self.inference(images, seq_labels_).detach()
         fake_d_out_ = self.discriminator(fake_seq_out, seq_labels_)[0]
 
@@ -423,6 +420,8 @@ class WeatherTransfer(object):
                 else:
                     self.lmda = self.global_step / self.all_step
 
+                seq_len = self.train_set.seq_len
+
                 images, con, seq_sig = (d.to('cuda', non_blocking=True) for d in data)
                 images = self.train_set.transform(images)
 
@@ -436,6 +435,8 @@ class WeatherTransfer(object):
                     continue
 
                 # --- TRAINING --- #
+                # images = torch.cat([torch.cat([image.unsqueeze(0)] * seq_len, dim=0) for image in images], dim=0
+                images = images.unsqueeze(1).repeat(1, seq_len, 1, 1, 1).view(-1, 3, self.args.input_size, self.args.input_size)
                 if self.global_step % args.GD_train_ratio == 0:
                     g_loss, g_loss_adv, g_loss_seq_adv, r_loss, w_loss, seq_loss, l1_loss = self.update_inference(images, con, seq_sig)
                     g_loss_l.append(g_loss)
