@@ -21,7 +21,7 @@ parser.add_argument('--cp_path', type=str,
 parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--batch_size', type=int, default=5)
 parser.add_argument('--num_workers', type=int, default=8)
-parser.add_argument('--csv_root', type=str, default='/mnt/fs2/2019/Takamuro/db/wwo_weather_data/usa/2016_2017')
+parser.add_argument('--csv_root', type=str, default='/mnt/HDD8T/takamuro/dataset/wwo/2016_2017')
 parser.add_argument('--city', type=str, default='Abram')
 parser.add_argument('--date', nargs=4, required=True)
 parser.add_argument('-g', '--generator', type=str, default='cUNet')
@@ -76,13 +76,14 @@ if __name__ == '__main__':
     df_ = temp.loc[:, cols].fillna(0)
     df_mean = df_.mean()
     df_std = df_.std()
+    del temp
 
     df = pd.read_pickle(args.pkl_path)
     df_.loc[:, cols] = (df_.loc[:, cols].fillna(0) - df_mean) / df_std
     df.loc[:, cols] = (df.loc[:, cols].fillna(0) - df_mean) / df_std
     df_sep = df[df['mode'] == 'test']
 
-    del df, df_, temp
+    del df, df_
     im_dataset = FlickrDataLoader(args.image_root, df_sep, cols, transform=transform, inf=True)
     sig_dateset = SensorLoader(args.csv_root, date=args.date, city=args.city, cols=cols, df_std=df_std, df_mean=df_mean)
 
@@ -118,8 +119,8 @@ if __name__ == '__main__':
     bs = args.batch_size
     out_li = []
 
-    save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'est',
-                             args.cp_path.split('/')[-2].split('_GDratio')[0],
+    save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'seq',
+                             args.cp_path.split('/')[-2],
                              args.cp_path.split('/')[-1].split('.pt')[0], 'video')
     os.makedirs(save_path, exist_ok=True)
     for i, data in tqdm(enumerate(im_loader), total=len(df_sep)//bs):

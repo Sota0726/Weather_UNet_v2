@@ -18,6 +18,7 @@ args = parser.parse_args()
 sys.path.append(os.getcwd())
 output_path = os.path.join(args.output_dir, args.log_path.split('/')[-1])
 print(output_path)
+print('please press enter')
 input()
 os.makedirs(output_path, exist_ok=True)
 
