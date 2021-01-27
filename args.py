@@ -14,6 +14,11 @@ def get_args():
         default='/mnt/fs2/2018/matsuzaki/dataset_fromnitta/Image/'
     )
     parser.add_argument(
+        '--vid_root',
+        type=str,
+        default='/mnt/HDD8T/takamuro/dataset/timelapse_frames'
+    )
+    parser.add_argument(
         '--celebA_root',
         type=str,
         default='/mnt/fs2/2019/Takamuro/db/CelebA/Img/img_align_celeba'
@@ -66,6 +71,7 @@ def get_args():
         choices=['flickr', 'i2w', 'celebA'],
         default='flickr')
     parser.add_argument('--gpu', type=str, default='0')
+    parser.add_argument("--local_rank", default=0, type=int)
     parser.add_argument('--data_mode', type=str, choices=['T', 'E'], default='T')
     parser.add_argument('--name', type=str, default='cUNet')
     # Nmaing rule : cUNet_[c(classifier) or e(estimator)]_[detail of condition]_[epoch]_[step]
@@ -106,6 +112,12 @@ def get_args():
         type=str,
         choices=['SNDisc', 'SNDiscV2', 'SNRes64', 'SNRes'],
         default='SNDisc'
+    )
+    parser.add_argument(
+        '--seq_disc',
+        type=str,
+        choices=['res10_3d', 'res18_3d', 'res34_3d'],
+        default='res10_3d'
     )
     parser.add_argument(
         '--predictor',

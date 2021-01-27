@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import init
 from torch.nn import utils
+from torch.autograd import Variable
 
 
 def upsample_box(out_channels):
@@ -153,3 +154,69 @@ class OptimizedBlock(nn.Module):
     def residual(self, x):
         h = self.activation(self.c1(x))
         return F.avg_pool2d(self.c2(h), 2)
+
+
+# --- SN 3d resnet --- #
+def conv3x3x3(in_planes, out_planes, stride=1):
+    # 3x3x3 convolution with padding
+    return nn.Conv3d(
+        in_planes,
+        out_planes,
+        kernel_size=3,
+        stride=stride,
+        padding=1,
+        bias=False
+    )
+
+
+def downsample_basic_block(x, planes, stride):
+    out = F.avg_pool3d(x, kernel_size=1, stride=stride)
+    zero_pads = torch.Tensor(
+        out.size(0), planes - out.size(1), out.size(2), out.size(3),
+        out.size(4)).zero_()
+    if isinstance(out.data, torch.cuda.FloatTensor) or isinstance(out.data, torch.cuda.HalfTensor):
+        zero_pads = zero_pads.cuda()
+
+    out = Variable(torch.cat([out.data, zero_pads], dim=1))
+
+    return out
+
+
+class BasicBlock3D(nn.Module):
+    expansion = 1
+
+    def __init__(self, inplanes, planes, stride=1, downsample=None):
+        super(BasicBlock3D, self).__init__()
+        self.conv1 = utils.spectral_norm(conv3x3x3(inplanes, planes, stride))
+        # self.bn1 = nn.BatchNorm3d(planes)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = utils.spectral_norm(conv3x3x3(planes, planes))
+        # self.bn2 = nn.BatchNorm3d(planes)
+        self.downsample = downsample
+        self.stride = stride
+
+        self._initialize()
+
+    def _initialize(self):
+        init.xavier_uniform_(self.conv1.weight.data, math.sqrt(2))
+        init.xavier_uniform_(self.conv2.weight.data, math.sqrt(2))
+
+    def forward(self, x):
+        residual = x
+
+        out = self.conv1(x)
+        # out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        # out = self.bn2(out)
+
+        if self.downsample is not None:
+            residual = self.downsample(x)
+
+        out += residual
+        out = self.relu(out)
+
+        return out
+
+# --- --- #

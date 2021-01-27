@@ -4,6 +4,7 @@ import random
 import pandas as pd
 import torch
 import numpy as np
+from glob import glob
 
 from PIL import Image
 from torch.utils.data import Dataset
@@ -191,11 +192,16 @@ class SequenceFlickrDataLoader(Dataset):
             idx_ = int(df_[df_.utc_date == date].index[0])
         except:
             print(date)
-            idx_ = random.randint(0, csv_date_num - 24)
-        df_seq = df_.iloc[idx_: idx_ + 24: self.seq_step]
+            # idx_ = random.randint(0, csv_date_num - 24)
+            idx_ = random.randint(0, csv_date_num - self.seq_len)
+        # df_seq = df_.iloc[idx_: idx_ + 24: self.seq_step]
+        # if len(df_seq) != self.seq_len:
+        #     idx_ = random.randint(0, csv_date_num - 24)
+        #     df_seq = df_.iloc[idx_: idx_ + 24: self.seq_step]
+        df_seq = df_.iloc[idx_: idx_ + self.seq_len]
         if len(df_seq) != self.seq_len:
-            idx_ = random.randint(0, csv_date_num - 24)
-            df_seq = df_.iloc[idx_: idx_ + 24: self.seq_step]
+            idx_ = random.randint(0, csv_date_num - self.seq_len)
+            df_seq = df_.iloc[idx_: idx_ + self.seq_len]
         df_seq = df_seq.loc[:, self.columns]
         df_seq = (df_seq.fillna(0) - self.mean) / self.std
         del df_
@@ -304,6 +310,37 @@ class SensorLoader(Dataset):
         date = self.df_sig.iloc[idx, -1]
 
         return sig, date
+
+
+class TimeLapseLoader(Dataset):
+    def __init__(self, vid_root, bs, transform=None):
+        self.vid_root = vid_root
+        self.vid24s = os.listdir(vid_root)
+        self.bs = bs
+        self.transform = transform
+        if transform is not None:
+            self.transform = transform.to('cuda')
+
+    def __len__(self):
+        return len(self.vid24s)
+
+    def read_vid(self, vid_name):
+        frame_paths = glob(os.path.join(self.vid_root, vid_name, '*.jpg'))
+        num_frames = len(frame_paths)
+        step = int(num_frames // 24)
+        # remain = int(num_frames % 24)
+        start_frame = random.randrange(0, step)
+        frame_paths_ = frame_paths[start_frame: num_frames: step]
+        ind = random.randrange(0, 12)
+        frames = [read_image(frame_path).unsqueeze(0) for frame_path in frame_paths_[ind: ind + 12]]
+        frames = torch.cat(frames, dim=0)
+        return frames
+
+    def __getitem__(self, idx):
+        vid_name = self.vid24s[idx]
+        timelapse = self.read_vid(vid_name)
+
+        return timelapse
 
 
 class TransientAttributes(Dataset):
