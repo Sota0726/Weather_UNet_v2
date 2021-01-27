@@ -234,7 +234,6 @@ class WeatherTransfer(object):
         return d_loss.item()
 
     def eval_each_sig_effect(self, images, labels, photo):
-        os.makedirs(os.path.join('runs', self.name, 'step_' + str(self.global_step)), exist_ok=True)
         test_bs = images.size(0)
         for i in range(test_bs):
             out_l = []
@@ -245,9 +244,10 @@ class WeatherTransfer(object):
                 out = self.inference(image_expand, sig_expand).detach().to('cpu')
                 out_l.append(out)
             outs = torch.cat(out_l, dim=2).float()
+            os.makedirs(os.path.join('runs', self.name, photo[i]), exist_ok=True)
             save_image(
                 outs,
-                fp=os.path.join('runs', self.name, 'step_' + str(self.global_step), photo[i] + '.png'),
+                fp=os.path.join('runs', self.name, photo[i], 'step_' + str(self.global_step) + '.png'),
                 normalize=True, scale_each=True, nrow=self.sig_step_num
             )
 
