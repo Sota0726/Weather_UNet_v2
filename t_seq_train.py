@@ -302,30 +302,35 @@ class WeatherTransfer(object):
         # for fake
         fake_seq_out = self.inference(images, seq_labels_).detach()
         fake_d_out_ = self.discriminator(fake_seq_out, seq_labels_)[0]
-
-        # for sequence
-        real_seq_d_out = self.seq_disc(sequence)
-        # (bs* seq_len, c, w, h) -> (bs, seq_len, c, w, h)
-        fake_seq_out = fake_seq_out.view(self.batch_size, -1, 3, self.args.input_size, self.args.input_size)
-        # (bs, c, seq_len, w, h)
-        fake_seq_out = torch.transpose(fake_seq_out, 1, 2)
-        fake_seq_d_out = self.seq_disc(fake_seq_out)
-
         d_loss = dis_hinge(fake_d_out_, real_d_out_pred)
-        seq_d_loss = dis_hinge(fake_seq_d_out, real_seq_d_out)
-
         if self.args.amp:
             with amp.scale_loss(d_loss, self.d_opt) as scale_loss:
                 scale_loss.backward(retain_graph=True)
-            with amp.scale_loss(seq_d_loss, self.seq_d_opt) as scale_loss_:
-                scale_loss_.backward(retain_graph=True)
         else:
             d_loss.backward(retain_graph=True)
-            seq_d_loss.backward(retain_graph=True)
-        self.d_opt.step()
-        self.seq_d_opt.step()
 
-        losses = [d_loss, seq_d_loss]
+        self.d_opt.step()
+        losses = [d_loss]
+
+        # for sequence
+        if self.global_step % self.args.GD_train_ratio == 0:
+            real_seq_d_out = self.seq_disc(sequence)
+            # (bs* seq_len, c, w, h) -> (bs, seq_len, c, w, h)
+            fake_seq_out = fake_seq_out.view(self.batch_size, -1, 3, self.args.input_size, self.args.input_size)
+            # (bs, c, seq_len, w, h)
+            fake_seq_out = torch.transpose(fake_seq_out, 1, 2)
+            fake_seq_d_out = self.seq_disc(fake_seq_out)
+            seq_d_loss = dis_hinge(fake_seq_d_out, real_seq_d_out)
+
+            if self.args.amp:
+                with amp.scale_loss(seq_d_loss, self.seq_d_opt) as scale_loss_:
+                    scale_loss_.backward(retain_graph=True)
+            else:
+                seq_d_loss.backward(retain_graph=True)
+
+            self.seq_d_opt.step()
+            losses.append(seq_d_loss)
+
         if self.args.distributed:
             losses_ = [to_python_float(reduce_tensor(loss.data, self.args)) for loss in losses]
         else:
@@ -520,9 +525,12 @@ class WeatherTransfer(object):
                     g_loss_con_l.append(r_loss)
                     g_loss_seq_l.append(seq_loss)
                     g_loss_l1_l.append(l1_loss)
-                d_loss, d_seq_loss = self.update_discriminator(images, con, seq_sig, sequence)
+                d_losses = self.update_discriminator(images, con, seq_sig, sequence)
+                d_loss = d_losses[0]
                 d_loss_l.append(d_loss)
-                d_seq_loss_l.append(d_seq_loss)
+                if len(d_losses) == 2:
+                    d_seq_loss = d_losses[1]
+                    d_seq_loss_l.append(d_seq_loss)
 
                 # --- EVALUATION --- #
                 if self.global_step % self.eval_per_step == 0:
