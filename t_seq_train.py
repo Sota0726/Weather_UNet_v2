@@ -279,8 +279,9 @@ class WeatherTransfer(object):
                 fake_out = torch.cat(gather_tensor(fake_out, self.args), dim=0)
             if self.args.local_rank == 0:
                 self.image_dict.update({
-                    'io/train': [images.cpu(), fake_out.cpu()]
+                    'io/train': [images.cpu().clone(), fake_out.cpu().clone()]
                 })
+                del images, fake_out
 
         return losses_
 
@@ -424,10 +425,10 @@ class WeatherTransfer(object):
             seq_out = self.eval_seq_transform(images, labels, seq_labels)
             self.eval_each_sig_effect(images, labels, photos)
             if self.args.local_rank == 0:
-                seq_out_l.append(seq_out)
+                seq_out_l.append(seq_out.cpu())
         losses = np.mean(np.array(losses_l), axis=0)
 
-        self.seq_test_samples.to('cpu')
+        self.seq_test_samples.cpu()
         # --- WRITING SUMMARY ---#
         # g_loss_adv, g_loss_l1, g_loss_w, loss_con, g_loss_seq, d_loss
         if self.args.local_rank == 0:
@@ -529,15 +530,15 @@ class WeatherTransfer(object):
                     self.seq_test_samples = self.seq_test_samples.cuda()
                     self.evaluation()
 
-                    g_loss_l = g_loss_l[:100]
-                    g_loss_adv_l = g_loss_adv_l[:100]
-                    g_loss_seq_adv_l = g_loss_seq_adv_l[:100]
-                    d_loss_l = d_loss_l[:100]
-                    d_seq_loss_l = d_seq_loss_l[:100]
-                    g_loss_w_l = g_loss_w_l[:100]
-                    g_loss_con_l = g_loss_con_l[:100]
-                    g_loss_l1_l = g_loss_l1_l[:100]
-                    g_loss_seq_l = g_loss_seq_l[:100]
+                    g_loss_l = g_loss_l[-100:]
+                    g_loss_adv_l = g_loss_adv_l[-100:]
+                    g_loss_seq_adv_l = g_loss_seq_adv_l[-100:]
+                    d_loss_l = d_loss_l[-100:]
+                    d_seq_loss_l = d_seq_loss_l[-100:]
+                    g_loss_w_l = g_loss_w_l[-100:]
+                    g_loss_con_l = g_loss_con_l[-100:]
+                    g_loss_l1_l = g_loss_l1_l[-100:]
+                    g_loss_seq_l = g_loss_seq_l[-100:]
 
                 if args.local_rank == 0:
                     tqdm_iter.set_postfix(OrderedDict(
