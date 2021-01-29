@@ -91,6 +91,7 @@ class WeatherTransfer(object):
         )
 
         seq_transform = nn.Sequential(
+            transforms.RandomResizedCrop(self.args.input_size),
             transforms.RandomAffine(degrees=10, translate=(0.2, 0.2), scale=(0.8, 1.2)),
             transforms.RandomHorizontalFlip(),
             transforms.RandomVerticalFlip(),
@@ -100,7 +101,7 @@ class WeatherTransfer(object):
                     contrast=0.3,
                     saturation=0.3,
                     hue=0)
-            ]),
+            ])),
             transforms.ConvertImageDtype(torch.float32),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         )
