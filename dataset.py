@@ -134,7 +134,7 @@ class FlickrDataLoader(Dataset):
 
 # FlickerDataLoaderから継承するように書き換える
 class SequenceFlickrDataLoader(Dataset):
-    def __init__(self, image_root, csv_root, df, columns, df_mean, df_std, bs,
+    def __init__(self, image_root, csv_root, df, columns, df_mean, df_std, bs, seq_len,
                  transform=None, inf=False, mode='train'):
         super(SequenceFlickrDataLoader, self).__init__()
         self.root = image_root
@@ -152,7 +152,7 @@ class SequenceFlickrDataLoader(Dataset):
         self.conditions = df.loc[:, columns]
         self.mean = df_mean
         self.std = df_std
-        self.seq_len = 12
+        self.seq_len = seq_len
         self.bs = bs
         self.seq_step = int(24 // self.seq_len)
         # self.labels = df['condition']
@@ -194,10 +194,6 @@ class SequenceFlickrDataLoader(Dataset):
             print(date)
             # idx_ = random.randint(0, csv_date_num - 24)
             idx_ = random.randint(0, csv_date_num - self.seq_len)
-        # df_seq = df_.iloc[idx_: idx_ + 24: self.seq_step]
-        # if len(df_seq) != self.seq_len:
-        #     idx_ = random.randint(0, csv_date_num - 24)
-        #     df_seq = df_.iloc[idx_: idx_ + 24: self.seq_step]
         df_seq = df_.iloc[idx_: idx_ + self.seq_len]
         if len(df_seq) != self.seq_len:
             idx_ = random.randint(0, csv_date_num - self.seq_len)
@@ -313,10 +309,11 @@ class SensorLoader(Dataset):
 
 
 class TimeLapseLoader(Dataset):
-    def __init__(self, vid_root, bs, transform=None):
+    def __init__(self, vid_root, bs, seq_len, transform=None):
         self.vid_root = vid_root
         self.vid24s = os.listdir(vid_root)
         self.bs = bs
+        self.seq_len = seq_len
         self.transform = transform
         if transform is not None:
             self.transform = transform
@@ -331,8 +328,8 @@ class TimeLapseLoader(Dataset):
         # remain = int(num_frames % 24)
         start_frame = random.randrange(0, step)
         frame_paths_ = frame_paths[start_frame: num_frames: step]
-        ind = random.randrange(0, 12)
-        frames = [read_image(frame_path).unsqueeze(0) for frame_path in frame_paths_[ind: ind + 12]]
+        ind = random.randrange(0, 24 - self.seq_len)
+        frames = [read_image(frame_path).unsqueeze(0) for frame_path in frame_paths_[ind: ind + self.seq_len]]
         frames = torch.cat(frames, dim=0)
         return frames
 
