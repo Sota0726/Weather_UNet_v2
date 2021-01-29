@@ -242,19 +242,19 @@ def make_seq_network(args, num_classes, name):
         from disc import resnet10_3d
         seq_disc = resnet10_3d(
             spatial_size=args.input_size,
-            sample_duration=12
+            sample_duration=args.seq_len
         )
     elif args.seq_disc == 'res18_3d':
         from disc import resnet18_3d
         seq_disc = resnet18_3d(
             spatial_size=args.input_size,
-            sample_duration=12
+            sample_duration=args.seq_len
         )
     elif args.seq_disc == 'res34_3d':
         from disc import resnet34_3d
         seq_disc = resnet34_3d(
             spatial_size=args.input_size,
-            sample_duration=12
+            sample_duration=args.seq_len
         )
 
     if args.resume_cp:

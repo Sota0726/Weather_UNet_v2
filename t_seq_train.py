@@ -89,6 +89,22 @@ class WeatherTransfer(object):
             transforms.ConvertImageDtype(torch.float32),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         )
+
+        seq_transform = nn.Sequential(
+            transforms.RandomAffine(degrees=10, translate=(0.2, 0.2), scale=(0.8, 1.2)),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomVerticalFlip(),
+            transforms.RandomApply(torch.nn.ModuleList([
+                transforms.ColorJitter(
+                    brightness=0.5,
+                    contrast=0.3,
+                    saturation=0.3,
+                    hue=0)
+            ]),
+            transforms.ConvertImageDtype(torch.float32),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        )
+
         # torch >= 1.7
         test_transform = nn.Sequential(
             # transforms.Resize((args.input_size,) * 2),
@@ -99,7 +115,7 @@ class WeatherTransfer(object):
         self.cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'DewPointC']
         self.num_classes = len(self.cols)
 
-        self.transform = {'train': train_transform, 'seq': train_transform, 'test': test_transform}
+        self.transform = {'train': train_transform, 'seq': seq_transform, 'test': test_transform}
         self.train_set, self.seq_set, self.test_set = self.load_data(varbose=True)
 
         self.build()
@@ -113,11 +129,11 @@ class WeatherTransfer(object):
         df_test = pd.read_pickle(args.test_pkl_path)
         # --- normalize --- #
         df_ = df.loc[:, self.cols].fillna(0)
-        df_mean = df_.mean()
-        df_std = df_.std()
+        self.df_mean = df_.mean()
+        self.df_std = df_.std()
 
-        df.loc[:, self.cols] = (df.loc[:, self.cols].fillna(0) - df_mean) / df_std
-        df_test.loc[:, self.cols] = (df_test.loc[:, self.cols].fillna(0) - df_mean) / df_std
+        df.loc[:, self.cols] = (df.loc[:, self.cols].fillna(0) - self.df_mean) / self.df_std
+        df_test.loc[:, self.cols] = (df_test.loc[:, self.cols].fillna(0) - self.df_mean) / self.df_std
         # ------------------ #
         # --- memory min - max value --- #
         self.sig_max = np.array([np.max(df[col].values) for col in self.cols])
@@ -135,11 +151,11 @@ class WeatherTransfer(object):
             'test': df_test}
         del df, df_shuffle, df_test
 
-        train_set = SequenceFlickrDataLoader(args.image_root, args.csv_root, df_sep['train'], self.cols, df_mean, df_std,
-                                             bs=args.batch_size, transform=self.transform['train'])
-        test_set = SequenceFlickrDataLoader(args.image_root, args.csv_root, df_sep['test'], self.cols, df_mean, df_std,
-                                            bs=1, transform=self.transform['test'], mode='test')
-        seq_set = TimeLapseLoader(args.vid_root, bs=args.batch_size, transform=self.transform['train'])
+        train_set = SequenceFlickrDataLoader(args.image_root, args.csv_root, df_sep['train'], self.cols, self.df_mean, self.df_std,
+                                             bs=args.batch_size, seq_len=args.seq_len, transform=self.transform['train'])
+        test_set = SequenceFlickrDataLoader(args.image_root, args.csv_root, df_sep['test'], self.cols, self.df_mean, self.df_std,
+                                            bs=1, seq_len=args.seq_len, transform=self.transform['test'], mode='test')
+        seq_set = TimeLapseLoader(args.vid_root, bs=args.batch_size, seq_len=args.seq_len, transform=self.transform['seq'])
         if args.local_rank == 0:
             print('train:{} test:{} sets have already loaded.'.format(len(train_set), len(test_set)))
         return train_set, seq_set, test_set
@@ -305,15 +321,17 @@ class WeatherTransfer(object):
         d_loss = dis_hinge(fake_d_out_, real_d_out_pred)
         if self.args.amp:
             with amp.scale_loss(d_loss, self.d_opt) as scale_loss:
-                scale_loss.backward(retain_graph=True)
+                scale_loss.backward(
+                    retain_graph=(self.global_step % (self.args.GD_train_ratio * 2) == 0))
         else:
-            d_loss.backward(retain_graph=True)
+            d_loss.backward(
+                retain_graph=(self.global_step % (self.args.GD_train_ratio * 2) == 0))
 
         self.d_opt.step()
         losses = [d_loss]
 
         # for sequence
-        if self.global_step % self.args.GD_train_ratio == 0:
+        if self.global_step % (self.args.GD_train_ratio * 2) == 0:
             real_seq_d_out = self.seq_disc(sequence)
             # (bs* seq_len, c, w, h) -> (bs, seq_len, c, w, h)
             fake_seq_out = fake_seq_out.view(self.batch_size, -1, 3, self.args.input_size, self.args.input_size)
@@ -583,7 +601,9 @@ class WeatherTransfer(object):
                                 'discriminator': self.discriminator.module.state_dict(),
                                 'seq_disc': self.seq_disc.module.state_dict(),
                                 'epoch': self.epoch,
-                                'global_step': self.global_step
+                                'global_step': self.global_step,
+                                'dataset_mean': self.df_mean.values,
+                                'dataset_std': self.df_std.values
                             }
                         else:
                             state_dict = {
@@ -591,7 +611,9 @@ class WeatherTransfer(object):
                                 'discriminator': self.discriminator.state_dict(),
                                 'seq_disc': self.seq_disc.state_dict(),
                                 'epoch': self.epoch,
-                                'global_step': self.global_step
+                                'global_step': self.global_step,
+                                'dataset_mean': self.df_mean.values,
+                                'dataset_std': self.df_std.values
                             }
                         torch.save(state_dict, out_path)
 
