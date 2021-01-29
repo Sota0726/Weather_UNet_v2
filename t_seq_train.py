@@ -257,8 +257,8 @@ class WeatherTransfer(object):
         lmda_con, lmda_w, lmda_seq = (1.3, 1, 1)
 
         g_loss = g_loss_adv + g_loss_seq_adv + lmda_con * loss_con + lmda_w * g_loss_w + lmda_seq * g_loss_seq
-        ### ------ ###
 
+        ### ------ ###
         if self.args.amp:
             with amp.scale_loss(g_loss, self.g_opt) as scale_loss:
                 scale_loss.backward()
@@ -324,9 +324,9 @@ class WeatherTransfer(object):
 
             if self.args.amp:
                 with amp.scale_loss(seq_d_loss, self.seq_d_opt) as scale_loss_:
-                    scale_loss_.backward(retain_graph=True)
+                    scale_loss_.backward()
             else:
-                seq_d_loss.backward(retain_graph=True)
+                seq_d_loss.backward()
 
             self.seq_d_opt.step()
             losses.append(seq_d_loss)
@@ -467,6 +467,7 @@ class WeatherTransfer(object):
                 self.writer.add_image(k, out, self.global_step)
             else:
                 self.writer.add_image(k, v, self.global_step)
+        self.image_dict = {}
 
     def train(self):
         args = self.args
@@ -490,6 +491,7 @@ class WeatherTransfer(object):
                 self.epoch += 1
             if args.distributed:
                 self.train_sampler.set_epoch(epoch)
+                self.seq_sampler.set_epoch(epoch)
 
             for i, data in enumerate(self.train_loader):
                 if args.local_rank == 0:
