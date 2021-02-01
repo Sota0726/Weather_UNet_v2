@@ -59,7 +59,7 @@ class WeatherTransfer(object):
         self.real = Variable_Float(1., self.batch_size)
         self.fake = Variable_Float(0., self.batch_size)
         self.lmda = 0.
-        self.args.lr = args.lr * (args.batch_size / 16)
+        self.args.lr = args.lr
         self.sig_step_num = 10
 
         self.args.distributed = False
@@ -244,13 +244,21 @@ class WeatherTransfer(object):
         pred_labels = pred_labels.float()
 
         fake_out = self.inference(images, seq_labels_)
-        fake_c_out = self.estimator(fake_out)
+        fake_c_out = self.estimator(fake_out).detach()
         fake_d_out = self.discriminator(fake_out, seq_labels_)[0]
         # (bs, c , seq_len, w, h)
-        fake_seq_out = fake_out.view(self.batch_size, -1, 3, self.args.input_size, self.args.input_size).clone()
+        # fake_seq_out = fake_out.view(self.batch_size, -1, 3, self.args.input_size, self.args.input_size)
         # (bs, c, seq_len, w, h)
-        fake_seq_out = torch.transpose(fake_seq_out, 1, 2)
-        fake_seq_d_out = self.seq_disc(fake_seq_out)
+        # fake_seq_out = torch.transpose(fake_seq_out, 1, 2)
+        # fake_seq_d_out = self.seq_disc(fake_seq_out)
+        fake_seq_d_out = self.seq_disc(torch.transpose(
+            fake_out.view(self.batch_size, -1, 3, self.args.input_size, self.args.input_size),
+            1, 2
+        ))
+
+        # for cycle consistency loss
+        pred_labels_ = pred_labels.unsqueeze(1).repeat(1, seq_len, 1).view(-1, self.num_classes)
+        fake_images = self.inference(fake_out, pred_labels_)
 
         ### -- Calc Generator Loss --- ###
         # Adversarial loss
@@ -258,6 +266,8 @@ class WeatherTransfer(object):
         g_loss_seq_adv = gen_hinge(fake_seq_d_out)
         # L1 Loss
         g_loss_l1 = l1_loss(fake_out, images)
+        # cycle consistency loss
+        g_loss_cyc = l1_loss(fake_images, images)
         # Weather prediction
         g_loss_w = pred_loss(fake_c_out, seq_labels_,
                              l_type=self.args.wloss_type, weight=self.args.wloss_weight)
@@ -269,11 +279,12 @@ class WeatherTransfer(object):
         diff = torch.mean(torch.abs(fake_out - images), [1, 2, 3])
         pred_labels = weight * pred_labels
         lmda = torch.mean(torch.abs(torch.transpose(torch.stack([pred_labels] * seq_len), 1, 0) - seq_labels), 2)
-        loss_con = torch.mean(diff / (lmda.reshape(-1) + self.args.epsilon))
+        g_loss_con = torch.mean(diff / (lmda.reshape(-1) + self.args.epsilon))
 
-        lmda_con, lmda_w, lmda_seq = (1.3, 1, 1)
+        lmda_con, lamda_cyc, lmda_w, lmda_seq = (1, 1, 1, 1)
 
-        g_loss = g_loss_adv + g_loss_seq_adv + lmda_con * loss_con + lmda_w * g_loss_w + lmda_seq * g_loss_seq
+        g_loss = g_loss_adv + g_loss_seq_adv + (lmda_con * g_loss_con) + (lamda_cyc * g_loss_cyc) \
+            + (lmda_w * g_loss_w) + (lmda_seq * g_loss_seq)
 
         ### ------ ###
         if self.args.amp:
@@ -284,7 +295,7 @@ class WeatherTransfer(object):
         self.g_opt.step()
 
         fake_out = fake_out.detach()
-        losses = [g_loss, g_loss_adv, g_loss_seq_adv, loss_con, g_loss_w, g_loss_seq, g_loss_l1]
+        losses = [g_loss, g_loss_adv, g_loss_seq_adv, g_loss_con, g_loss_cyc, g_loss_w, g_loss_seq, g_loss_l1]
         if self.args.distributed:
             losses_ = [to_python_float(reduce_tensor(loss.data, self.args)) for loss in losses]
         else:
@@ -335,10 +346,14 @@ class WeatherTransfer(object):
         if self.global_step % (self.args.GD_train_ratio * 2) == 0:
             real_seq_d_out = self.seq_disc(sequence)
             # (bs* seq_len, c, w, h) -> (bs, seq_len, c, w, h)
-            fake_seq_out = fake_seq_out.view(self.batch_size, -1, 3, self.args.input_size, self.args.input_size)
+            # fake_seq_out = fake_seq_out.view(self.batch_size, -1, 3, self.args.input_size, self.args.input_size)
             # (bs, c, seq_len, w, h)
-            fake_seq_out = torch.transpose(fake_seq_out, 1, 2)
-            fake_seq_d_out = self.seq_disc(fake_seq_out)
+            # fake_seq_out = torch.transpose(fake_seq_out, 1, 2)
+            # fake_seq_d_out = self.seq_disc(fake_seq_out)
+            fake_seq_d_out = self.seq_disc(torch.transpose(
+                fake_seq_out.view(self.batch_size, -1, 3, self.args.input_size, self.args.input_size),
+                1, 2
+            ))
             seq_d_loss = dis_hinge(fake_seq_d_out, real_seq_d_out)
 
             if self.args.amp:
@@ -399,18 +414,26 @@ class WeatherTransfer(object):
         test_set_bs = self.test_set.bs
         sequence = sequence[:test_set_bs]
         images = images.unsqueeze(1).repeat(1, seq_len, 1, 1, 1).view(-1, 3, self.args.input_size, self.args.input_size)
+        labels_ = labels.unsqueeze(1).repeat(1, seq_len, 1).view(-1, self.num_classes)
         with torch.no_grad():
             fake_out = self.inference(images, seq_labels_)
             fake_c_out = self.estimator(fake_out)
             fake_d_out = self.discriminator(fake_out, seq_labels_)[0]
-            fake_seq_out = fake_out.view(test_set_bs, -1, 3, self.args.input_size, self.args.input_size)
-            fake_seq_out = torch.transpose(fake_seq_out, 1, 2)
-            fake_seq_d_out = self.seq_disc(fake_seq_out)
+            # fake_seq_out = fake_out.view(test_set_bs, -1, 3, self.args.input_size, self.args.input_size)
+            # fake_seq_out = torch.transpose(fake_seq_out, 1, 2)
+            # fake_seq_d_out = self.seq_disc(fake_seq_out)
+            fake_seq_d_out = self.seq_disc(torch.transpose(
+                fake_out.view(test_set_bs, -1, 3, self.args.input_size, self.args.input_size),
+                1, 2
+            ))
+            fake_images = self.inference(fake_out, labels_)
 
         # Adversarial loss
         g_loss_adv = gen_hinge(fake_d_out)
         # L1 Loss
         g_loss_l1 = l1_loss(fake_out, images)
+        # cycle consistency loss
+        g_loss_cyc = l1_loss(fake_images, images)
         # Weather prediction
         g_loss_w = pred_loss(fake_c_out, seq_labels_,
                              l_type=self.args.wloss_type, weight=self.args.wloss_weight)
@@ -421,7 +444,7 @@ class WeatherTransfer(object):
         labels_ = weight * labels
         diff = torch.mean(torch.abs(fake_out - images), [1, 2, 3])
         lmda = torch.mean(torch.abs(torch.transpose(torch.stack([labels_] * seq_len), 1, 0) - seq_labels), 2)
-        loss_con = torch.mean(diff / (lmda.reshape(-1) + self.args.epsilon))
+        g_loss_con = torch.mean(diff / (lmda.reshape(-1) + self.args.epsilon))
         # discriminator loss
         with torch.no_grad():
             real_d_out = self.discriminator(images[::seq_len], labels)[0]
@@ -430,7 +453,7 @@ class WeatherTransfer(object):
         d_loss = dis_hinge(fake_d_out, real_d_out)
         seq_d_loss = dis_hinge(fake_seq_d_out, real_seq_d_out)
 
-        losses = [g_loss_adv, g_loss_l1, g_loss_w, loss_con, g_loss_seq, d_loss, seq_d_loss]
+        losses = [g_loss_adv, g_loss_l1, g_loss_w, g_loss_con, g_loss_cyc, g_loss_seq, d_loss, seq_d_loss]
         if self.args.distributed:
             losses_ = [to_python_float(reduce_tensor(loss.data, self.args)) for loss in losses]
         else:
@@ -461,9 +484,10 @@ class WeatherTransfer(object):
                 'losses/g_loss_l1/test': losses[1],
                 'losses/g_loss_w/test': losses[2],
                 'losses/loss_con/test': losses[3],
-                'losses/loss_seq/test': losses[4],
-                'losses/d_loss/test': losses[5],
-                'losses/d_seq_loss/test': losses[6]
+                'losses/loss_cyc/test': losses[4],
+                'losses/loss_seq/test': losses[5],
+                'losses/d_loss/test': losses[6],
+                'losses/d_seq_loss/test': losses[7]
             })
 
             seq_out = torch.cat(seq_out_l, dim=1)
@@ -501,6 +525,7 @@ class WeatherTransfer(object):
         d_seq_loss_l = []
         g_loss_w_l = []
         g_loss_con_l = []
+        g_loss_cyc_l = []
         g_loss_l1_l = []
         g_loss_seq_l = []
 
@@ -538,12 +563,14 @@ class WeatherTransfer(object):
                 # --- TRAINING --- #
                 images = images.unsqueeze(1).repeat(1, seq_len, 1, 1, 1).view(-1, 3, self.args.input_size, self.args.input_size)
                 if self.global_step % args.GD_train_ratio == 0:
-                    g_loss, g_loss_adv, g_loss_seq_adv, r_loss, w_loss, seq_loss, l1_loss = self.update_inference(images, con, seq_sig)
+                    g_loss, g_loss_adv, g_loss_seq_adv, r_loss, cyc_loss, w_loss, seq_loss, l1_loss \
+                        = self.update_inference(images, con, seq_sig)
                     g_loss_l.append(g_loss)
                     g_loss_adv_l.append(g_loss_adv)
                     g_loss_seq_adv_l.append(g_loss_seq_adv)
                     g_loss_w_l.append(w_loss)
                     g_loss_con_l.append(r_loss)
+                    g_loss_cyc_l.append(cyc_loss)
                     g_loss_seq_l.append(seq_loss)
                     g_loss_l1_l.append(l1_loss)
                 d_losses = self.update_discriminator(images, con, seq_sig, sequence)
@@ -566,6 +593,7 @@ class WeatherTransfer(object):
                     d_seq_loss_l = d_seq_loss_l[-100:]
                     g_loss_w_l = g_loss_w_l[-100:]
                     g_loss_con_l = g_loss_con_l[-100:]
+                    g_loss_cyc_l = g_loss_cyc_l[-100:]
                     g_loss_l1_l = g_loss_l1_l[-100:]
                     g_loss_seq_l = g_loss_seq_l[-100:]
 
@@ -586,6 +614,7 @@ class WeatherTransfer(object):
                             'losses/g_loss_l1/train': np.mean(g_loss_l1_l),
                             'losses/g_loss_w/train': np.mean(g_loss_w_l),
                             'losses/loss_con/train': np.mean(g_loss_con_l),
+                            'losses/loss_cyc/train': np.mean(g_loss_cyc_l),
                             'losses/loss_seq/train': np.mean(g_loss_seq_l),
                             'losses/d_loss/train': np.mean(d_loss_l),
                             'losses/d_seq_loss/train': np.mean(d_seq_loss_l)
