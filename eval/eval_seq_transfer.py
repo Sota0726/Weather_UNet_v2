@@ -1,17 +1,18 @@
 import argparse
 import os
+import shutil
 import sys
+from glob import glob
 
+import cv2
 import numpy as np
 import pandas as pd
 from PIL import Image
 from tqdm import tqdm
-import shutil
-from glob import glob
-from torchvision.utils import save_image
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--gpu', type=str, default='1')
+parser.add_argument('--gpu', type=str, default='0')
 parser.add_argument('--image_root', type=str,
                     default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017')
 parser.add_argument('--pkl_path', type=str,
@@ -20,12 +21,16 @@ parser.add_argument('--cp_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/transfer/est/1204_cUNet_w-e_res101-1203L05e15_SNDisc_sampler-False_GDratio1-8_adam-b10.5-b20.9_lr-0.0001_bs-24_ne-150/cUNet_est_e0134_s1432000.pt')
 parser.add_argument('--estimator_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/estimator/'
-                    'est_res101-1203_sampler_pre_WoPerson_sky-10_L-05/est_resnet101_15_step62240.pt')
+                    '1209_est_res101_val_WoPerson_ss-10_L05/est_resnet101_10_step42790.pt')
 parser.add_argument('--input_size', type=int, default=224)
 parser.add_argument('--batch_size', type=int, default=5)
 parser.add_argument('--num_workers', type=int, default=8)
+parser.add_argument('--csv_root', type=str, default='/mnt/HDD8T/takamuro/dataset/wwo/2016_2017')
+parser.add_argument('--city', type=str, default='Abram')
+parser.add_argument('--date', nargs=4, required=True)
 parser.add_argument('-g', '--generator', type=str, default='cUNet')
 args = parser.parse_args()
+# args = parser.parse_args(args=['--date', '2016', '2', '21', '10'])
 
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
@@ -35,14 +40,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision as tv
 import torchvision.transforms as transforms
-import torchvision.models as models
-from torch.utils.data import Dataset
+from torchvision.utils import save_image
 
 sys.path.append(os.getcwd())
-from dataset import ImageLoader, FlickrDataLoader
 from cunet import Conditional_UNet, Conditional_UNet_V2
-from sampler import ImbalancedDatasetSampler
-from ops import make_table_img
+from dataset import FlickrDataLoader, SensorLoader
 
 
 if __name__ == '__main__':
@@ -60,25 +62,32 @@ if __name__ == '__main__':
     df_ = temp.loc[:, cols].fillna(0)
     df_mean = df_.mean()
     df_std = df_.std()
+    df_max = df_.max()
+    df_min = df_.min()
+    del temp
 
     df = pd.read_pickle(args.pkl_path)
     df_.loc[:, cols] = (df_.loc[:, cols].fillna(0) - df_mean) / df_std
     df.loc[:, cols] = (df.loc[:, cols].fillna(0) - df_mean) / df_std
     df_sep = df[df['mode'] == 'test']
 
-    sig_step_num = 10
-    sig_l = [np.linspace(df_.loc[:, col].min(), df_.loc[:, col].max(), sig_step_num) for col in cols]
+    del df, df_
+    im_dataset = FlickrDataLoader(args.image_root, df_sep, cols, bs=args.batch_size, transform=transform, inf=True)
+    sig_dateset = SensorLoader(args.csv_root, date=args.date, city=args.city, cols=cols, df_std=df_std, df_mean=df_mean)
 
-    print('loaded {} signals data'.format(len(df_sep)))
-    del df, df_, temp
-    dataset = FlickrDataLoader(args.image_root, df_sep, cols, transform=transform, inf=True)
+    im_loader = torch.utils.data.DataLoader(
+        im_dataset,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        drop_last=True
+    )
 
-    loader = torch.utils.data.DataLoader(
-            dataset,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            drop_last=True
-            )
+    sig_loader = torch.utils.data.DataLoader(
+        sig_dateset,
+        batch_size=24,
+        num_workers=args.num_workers,
+        drop_last=True
+    )
 
     # load model
     if args.generator == 'cUNet':
@@ -91,7 +100,6 @@ if __name__ == '__main__':
 
     sd = torch.load(args.cp_path)
     transfer.load_state_dict(sd['inference'])
-    transfer.eval()
 
     estimator = torch.load(args.estimator_path)
     estimator.eval()
@@ -101,36 +109,32 @@ if __name__ == '__main__':
     estimator.cuda()
 
     bs = args.batch_size
-    out_li = []
-
-    save_path_all = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'seq',
-                             args.cp_path.split('/')[-2],
-                             args.cp_path.split('/')[-1].split('.pt')[0], 'all_sig')
-    save_path_each = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'seq',
-                             args.cp_path.split('/')[-2],
-                             args.cp_path.split('/')[-1].split('.pt')[0], 'each_sig')
-    os.makedirs(save_path_all, exist_ok=True)
-    os.makedirs(save_path_each, exist_ok=True)
-    for k, data in tqdm(enumerate(loader), total=len(df_sep)//bs):
+    y_true_l = []
+    y_pred_l = []
+    for i, data in tqdm(enumerate(im_loader), total=len(df_sep)//bs):
         batch = data[0].to('cuda')
-        p_name = data[2]
-        batch = dataset.transform(batch)
-
+        batch = im_dataset.transform(batch)
         sig = data[1].to('cuda')
-        b_photos = data[2]
+        for j in tqdm(range(bs)):
 
-        blank = torch.zeros_like(batch[0]).unsqueeze(0)
+            for sig_data in (sig_loader):
+                sig = sig_data[0].to('cuda')
+                date = sig_data[1]
+                with torch.no_grad():
+                    batch_ = torch.unsqueeze(batch[j], dim=0)
+                    batch_expand = torch.cat([batch_] * 24, dim=0)
+                    out = transfer(batch_expand, sig)
 
-        for i in tqdm(range(bs)):
-            with torch.no_grad():
-                out_l = []
-                for j, col in enumerate(cols):
-                    ref_labels_expand = torch.cat([sig[i]] * sig_step_num).view(-1, len(cols))
-                    ref_labels_expand[:, j] = torch.from_numpy(sig_l[j]).float().to('cuda')
-                    batch_ = torch.unsqueeze(batch[i], dim=0)
-                    batch_expand = torch.cat([batch_] * sig_step_num, dim=0)
-                    out = transfer(batch_expand, ref_labels_expand)
-                    save_image(out, fp=os.path.join(save_path_each, p_name[i] + '_' + col + '.jpg'), normalize=True, scale_each=True, nrow=sig_step_num)
-                    out_l.append(out)
-                out_ = torch.cat(out_l, dim=2)
-                save_image(out_, fp=os.path.join(save_path_all, p_name[i] + '.jpg'), normalize=True, scale_each=True, nrow=sig_step_num)
+                    out_sig = estimator(out)
+                y_true_l.append(sig.cpu())
+                y_pred_l.append(out_sig.cpu())
+    y_true = torch.cat(y_true_l, dim=0).numpy()
+    y_pred = torch.cat(y_pred_l, dim=0).numpy()
+
+    y_true_n = (y_true * df_std.values + df_mean.values) / df_max.values
+    y_pred_n = (y_pred * df_std.values + df_mean.values) / df_max.values
+    mae = mean_absolute_error(y_true_n, y_pred_n)
+    mse = mean_squared_error(y_true_n, y_pred_n)
+
+    print("mae score = {}".format(mae))
+    print("mse score = {}".format(mse))

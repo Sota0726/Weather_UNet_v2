@@ -134,7 +134,7 @@ def make_dataloader(dataset, args, mode='train', sampler=None):
             pin_memory=True)
         return loader
 
-    if args.sampler == 'none':
+    elif args.sampler == 'none':
         loader = torch.utils.data.DataLoader(
             dataset,
             batch_size=dataset.bs,

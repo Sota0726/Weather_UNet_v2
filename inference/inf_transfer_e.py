@@ -84,7 +84,7 @@ if __name__ == '__main__':
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         drop_last=True,
-        shuffle=True
+        # shuffle=True
     )
     random_loader = torch.utils.data.DataLoader(
         dataset,
@@ -124,9 +124,9 @@ if __name__ == '__main__':
     estimator.cuda()
 
     out_li = []
-    save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'est',
+    save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'seq',
                              args.cp_path.split('/')[-2],
-                             args.cp_path.split('/')[-1].split('.pt')[0], '50x50')
+                             args.cp_path.split('/')[-1].split('.pt')[0], '{}x{}'.format(len(df_sep), len(df_sep)))
     os.makedirs(save_path, exist_ok=True)
     for k, (data, rnd) in tqdm(enumerate(zip(loader, random_loader)), total=len(df_sep)//s_bs):
         batch = data[0].to('cuda')

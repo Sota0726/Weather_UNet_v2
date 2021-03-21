@@ -69,7 +69,7 @@ class ImageLoader(Dataset):
 
 
 class FlickrDataLoader(Dataset):
-    def __init__(self, image_root, df, columns, transform=None, class_id=False, inf=False):
+    def __init__(self, image_root, df, columns, bs, transform=None, class_id=False, inf=False):
         super(FlickrDataLoader, self).__init__()
         # init
         self.root = image_root
@@ -77,17 +77,18 @@ class FlickrDataLoader(Dataset):
         self.photo_id = df['photo'].to_list()
         self.class_id = class_id
         self.conditions = df.loc[:, columns]
-        self.labels = df['condition']
+        # self.labels = df['condition']
 
-        df['orig_date_h'] = df['orig_date']
-        temp = df['orig_date_h'].str.split(':', expand=True)
-        temp = temp[0].str.split('T', expand=True)
-        df.orig_date_h = temp[1].astype(int)
-        del temp
-        self.time_list = df['orig_date_h'].to_list()
+        # df['orig_date_h'] = df['orig_date']
+        # temp = df['orig_date_h'].str.split(':', expand=True)
+        # temp = temp[0].str.split('T', expand=True)
+        # df.orig_date_h = temp[1].astype(int)
+        # del temp
+        # self.time_list = df['orig_date_h'].to_list()
 
         self.cls_li = ['Clear', 'Clouds', 'Rain', 'Snow', 'Mist']
         self.num_classes = len(columns)
+        self.bs = bs
         # torch >= 1.7
         self.transform = transform
         del df
@@ -116,7 +117,7 @@ class FlickrDataLoader(Dataset):
         # --- GET IMAGE ---#
         # torch > 1.7
         try:
-            image = read_image(os.path.join(self.root, self.photo_id[idx] + '.jpg'))
+            image = read_image(os.path.join(self.root, str(self.photo_id[idx]) + '.jpg'))
         except:
             return self.__getitem__(idx)
 

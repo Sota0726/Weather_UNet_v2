@@ -85,7 +85,23 @@ class WeatherTransfer(object):
         train_transform = nn.Sequential(
             transforms.RandomRotation(10),
             # transforms.RandomResizedCrop(args.input_size),
+            transforms.RandomHorizontalFlip(),
+            transforms.ConvertImageDtype(torch.float32),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        )
+
+        seq_transform = nn.Sequential(
+            transforms.RandomResizedCrop(self.args.input_size),
+            transforms.RandomAffine(degrees=10, translate=(0.2, 0.2), scale=(0.8, 1.2)),
+            transforms.RandomHorizontalFlip(),
             transforms.RandomVerticalFlip(),
+            transforms.RandomApply(torch.nn.ModuleList([
+                transforms.ColorJitter(
+                    brightness=0.5,
+                    contrast=0.3,
+                    saturation=0.3,
+                    hue=0)
+            ])),
             transforms.ConvertImageDtype(torch.float32),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         )
@@ -100,8 +116,8 @@ class WeatherTransfer(object):
         self.cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'pressure', 'DewPointC']
         self.num_classes = len(self.cols)
 
-        self.transform = {'train': train_transform, 'test': test_transform}
-        self.train_set, self.test_set = self.load_data(varbose=True)
+        self.transform = {'train': train_transform, 'seq': seq_transform, 'test': test_transform}
+        self.train_set, self.seq_set, self.test_set = self.load_data(varbose=True)
 
         self.build()
 
@@ -140,9 +156,10 @@ class WeatherTransfer(object):
                                              bs=args.batch_size, seq_len=args.seq_len, transform=self.transform['train'])
         test_set = SequenceFlickrDataLoader(args.image_root, args.csv_root, df_sep['test'], self.cols, self.df_mean, self.df_std,
                                             bs=1, seq_len=args.seq_len, transform=self.transform['test'], mode='test')
+        seq_set = TimeLapseLoader(args.vid_root, bs=args.batch_size, seq_len=args.seq_len, transform=self.transform['seq'])
         if args.local_rank == 0:
             print('train:{} test:{} sets have already loaded.'.format(len(train_set), len(test_set)))
-        return train_set, test_set
+        return train_set, seq_set, test_set
 
     def build(self):
         args = self.args
@@ -150,36 +167,45 @@ class WeatherTransfer(object):
         # Models
         if args.local_rank == 0:
             print('Build Models...')
-        self.inference, self.discriminator, self.estimator, self.epoch, self.global_step = make_network(args, self.num_classes, self.name)
+        self.inference, self.discriminator, self.seq_disc, self.estimator, self.epoch, self.global_step = make_seq_network(args, self.num_classes, self.name)
         self.estimator.eval()
 
         # Models to CUDA
         memory_format = torch.contiguous_format
-        [i.cuda().to(memory_format=memory_format) for i in [self.inference, self.discriminator, self.estimator]]
+        [i.cuda().to(memory_format=memory_format) for i in [self.inference, self.discriminator, self.seq_disc, self.estimator]]
 
         # Optimizer
         self.g_opt = torch.optim.Adam(self.inference.parameters(), lr=args.lr, betas=(args.adam_beta1, args.adam_beta2), weight_decay=args.lr/20)
         self.d_opt = torch.optim.Adam(self.discriminator.parameters(), lr=args.lr, betas=(args.adam_beta1, args.adam_beta2), weight_decay=args.lr/20)
+        self.seq_d_opt = torch.optim.Adam(self.seq_disc.parameters(), lr=args.lr, betas=(args.adam_beta1, args.adam_beta2), weight_decay=args.lr/20)
 
         # apex
         if args.amp:
             self.inference, self.g_opt = amp.initialize(self.inference, self.g_opt, opt_level='O1')
             self.discriminator, self.d_opt = amp.initialize(self.discriminator, self.d_opt, opt_level='O1')
+            self.seq_disc, self.seq_d_opt = amp.initialize(self.seq_disc, self.seq_d_opt, opt_level='O1')
 
         # multi gpu
         if args.distributed:
             self.inference = DistributedDataParallel(self.inference, delay_allreduce=True)
             self.discriminator = DistributedDataParallel(self.discriminator, delay_allreduce=True)
+            self.seq_disc = DistributedDataParallel(self.seq_disc, delay_allreduce=True)
             self.estimator = DistributedDataParallel(self.estimator, delay_allreduce=True)
 
         self.train_set.transform = self.train_set.transform.cuda()
+        self.seq_set.transform = self.seq_set.transform.cuda()
         self.test_set.transform = self.test_set.transform.cuda()
 
         self.train_sampler = None
+        self.seq_sampler = None
         self.test_sampler = None
         if args.distributed:
             self.train_sampler = torch.utils.data.distributed.DistributedSampler(
                 self.train_set, num_replicas=torch.distributed.get_world_size(),
+                rank=torch.distributed.get_rank()
+            )
+            self.seq_sampler = torch.utils.data.distributed.DistributedSampler(
+                self.seq_set, num_replicas=torch.distributed.get_world_size(),
                 rank=torch.distributed.get_rank()
             )
             self.test_sampler = torch.utils.data.distributed.DistributedSampler(
@@ -189,7 +215,16 @@ class WeatherTransfer(object):
 
         self.train_loader = make_dataloader(self.train_set, args, sampler=self.train_sampler)
         args.sampler = 'none'
+        seq_loader = make_dataloader(self.seq_set, args, sampler=self.seq_sampler)
+        seq_loader = iter(seq_loader)
+        self.seq_test_samples = seq_loader.__next__()
+        self.seq_loader = itertools.cycle(iter(seq_loader))
         self.test_loader = make_dataloader(self.test_set, args, mode='test', sampler=self.test_sampler)
+
+        self.seq_test_samples = torch.stack([
+            self.seq_set.transform(self.seq_test_samples[i].cuda())
+            for i in range(self.batch_size)], dim=0)
+        self.seq_test_samples = torch.transpose(self.seq_test_samples, 1, 2)
 
         self.scalar_dict = {}
         self.image_dict = {}
@@ -216,18 +251,23 @@ class WeatherTransfer(object):
         # (bs, c, seq_len, w, h)
         # fake_seq_out = torch.transpose(fake_seq_out, 1, 2)
         # fake_seq_d_out = self.seq_disc(fake_seq_out)
+        fake_seq_d_out = self.seq_disc(torch.transpose(
+            fake_out.view(self.batch_size, -1, 3, self.args.input_size, self.args.input_size),
+            1, 2
+        ))
 
         # for cycle consistency loss
-        # pred_labels_ = pred_labels.unsqueeze(1).repeat(1, seq_len, 1).view(-1, self.num_classes)
-        # fake_images = self.inference(fake_out, pred_labels_)
+        pred_labels_ = pred_labels.unsqueeze(1).repeat(1, seq_len, 1).view(-1, self.num_classes)
+        fake_images = self.inference(fake_out, pred_labels_)
 
         ### -- Calc Generator Loss --- ###
         # Adversarial loss
         g_loss_adv = gen_hinge(fake_d_out)
+        g_loss_seq_adv = gen_hinge(fake_seq_d_out)
         # L1 Loss
         g_loss_l1 = l1_loss(fake_out, images)
         # cycle consistency loss
-        # g_loss_cyc = l1_loss(fake_images, images)
+        g_loss_cyc = l1_loss(fake_images, images)
         # Weather prediction
         g_loss_w = pred_loss(fake_c_out, seq_labels_,
                              l_type=self.args.wloss_type, weight=self.args.wloss_weight)
@@ -241,10 +281,9 @@ class WeatherTransfer(object):
         lmda = torch.mean(torch.abs(torch.transpose(torch.stack([pred_labels] * seq_len), 1, 0) - seq_labels), 2)
         g_loss_con = torch.mean(diff / (lmda.reshape(-1) + self.args.epsilon))
 
-        lmda_con, lamda_cyc, lmda_w, lmda_seq = (1, 1, 1, 1)
+        lamda_dseq, lmda_con, lamda_cyc, lmda_w, lmda_seq = (0.1, 1, 1, 1, 1)
 
-        # g_loss = g_loss_adv + (lmda_con * g_loss_con) + (lamda_cyc * g_loss_cyc) \
-        g_loss = g_loss_adv + (lmda_con * g_loss_con) \
+        g_loss = g_loss_adv + (lamda_dseq * g_loss_seq_adv) + (lmda_con * g_loss_con) + (lamda_cyc * g_loss_cyc) \
             + (lmda_w * g_loss_w) + (lmda_seq * g_loss_seq)
 
         ### ------ ###
@@ -256,9 +295,7 @@ class WeatherTransfer(object):
         self.g_opt.step()
 
         fake_out = fake_out.detach()
-        # losses = [g_loss, g_loss_adv, g_loss_con, g_loss_cyc, g_loss_w, g_loss_seq, g_loss_l1]
-        losses = [g_loss, g_loss_adv, g_loss_con, g_loss_w, g_loss_seq, g_loss_l1]
-
+        losses = [g_loss, g_loss_adv, g_loss_seq_adv, g_loss_con, g_loss_cyc, g_loss_w, g_loss_seq, g_loss_l1]
         if self.args.distributed:
             losses_ = [to_python_float(reduce_tensor(loss.data, self.args)) for loss in losses]
         else:
@@ -276,10 +313,11 @@ class WeatherTransfer(object):
 
         return losses_
 
-    def update_discriminator(self, images, labels, seq_labels):
+    def update_discriminator(self, images, labels, seq_labels, sequence):
 
         # --- UPDATE(Discriminator) ---#
         self.d_opt.zero_grad()
+        self.seq_d_opt.zero_grad()
         seq_len = self.train_set.seq_len
         seq_labels_ = seq_labels.view(-1, self.num_classes)
         # for real
@@ -295,19 +333,44 @@ class WeatherTransfer(object):
         d_loss = dis_hinge(fake_d_out_, real_d_out_pred)
         if self.args.amp:
             with amp.scale_loss(d_loss, self.d_opt) as scale_loss:
-                scale_loss.backward()
+                scale_loss.backward(
+                    retain_graph=(self.global_step % (self.args.GD_train_ratio * 2) == 0))
         else:
-            d_loss.backward()
+            d_loss.backward(
+                retain_graph=(self.global_step % (self.args.GD_train_ratio * 2) == 0))
+
         self.d_opt.step()
+        losses = [d_loss]
 
         # for sequence
+        if self.global_step % (self.args.GD_train_ratio * 1) == 0:
+            real_seq_d_out = self.seq_disc(sequence)
+            # (bs* seq_len, c, w, h) -> (bs, seq_len, c, w, h)
+            # fake_seq_out = fake_seq_out.view(self.batch_size, -1, 3, self.args.input_size, self.args.input_size)
+            # (bs, c, seq_len, w, h)
+            # fake_seq_out = torch.transpose(fake_seq_out, 1, 2)
+            # fake_seq_d_out = self.seq_disc(fake_seq_out)
+            fake_seq_d_out = self.seq_disc(torch.transpose(
+                fake_seq_out.view(self.batch_size, -1, 3, self.args.input_size, self.args.input_size),
+                1, 2
+            ))
+            seq_d_loss = dis_hinge(fake_seq_d_out, real_seq_d_out)
+
+            if self.args.amp:
+                with amp.scale_loss(seq_d_loss, self.seq_d_opt) as scale_loss_:
+                    scale_loss_.backward()
+            else:
+                seq_d_loss.backward()
+
+            self.seq_d_opt.step()
+            losses.append(seq_d_loss)
+
         if self.args.distributed:
-            d_loss_ = to_python_float(reduce_tensor(d_loss.data, self.args))
-
+            losses_ = [to_python_float(reduce_tensor(loss.data, self.args)) for loss in losses]
         else:
-            d_loss_ = d_loss.item()
+            losses_ = [loss.item() for loss in losses]
 
-        return d_loss_
+        return losses_
 
     def eval_each_sig_effect(self, images, labels, photo):
         test_bs = images.size(0)
@@ -345,23 +408,32 @@ class WeatherTransfer(object):
 
         return out
 
-    def eval_loss(self, images, labels, seq_labels):
+    def eval_loss(self, images, labels, seq_labels, sequence):
         seq_len = self.train_set.seq_len
         seq_labels_ = seq_labels.view(-1, self.num_classes)
+        test_set_bs = self.test_set.bs
+        sequence = sequence[:test_set_bs]
         images = images.unsqueeze(1).repeat(1, seq_len, 1, 1, 1).view(-1, 3, self.args.input_size, self.args.input_size)
         labels_ = labels.unsqueeze(1).repeat(1, seq_len, 1).view(-1, self.num_classes)
         with torch.no_grad():
             fake_out = self.inference(images, seq_labels_)
             fake_c_out = self.estimator(fake_out)
             fake_d_out = self.discriminator(fake_out, seq_labels_)[0]
-            # fake_images = self.inference(fake_out, labels_)
+            # fake_seq_out = fake_out.view(test_set_bs, -1, 3, self.args.input_size, self.args.input_size)
+            # fake_seq_out = torch.transpose(fake_seq_out, 1, 2)
+            # fake_seq_d_out = self.seq_disc(fake_seq_out)
+            fake_seq_d_out = self.seq_disc(torch.transpose(
+                fake_out.view(test_set_bs, -1, 3, self.args.input_size, self.args.input_size),
+                1, 2
+            ))
+            fake_images = self.inference(fake_out, labels_)
 
         # Adversarial loss
         g_loss_adv = gen_hinge(fake_d_out)
         # L1 Loss
         g_loss_l1 = l1_loss(fake_out, images)
         # cycle consistency loss
-        # g_loss_cyc = l1_loss(fake_images, images)
+        g_loss_cyc = l1_loss(fake_images, images)
         # Weather prediction
         g_loss_w = pred_loss(fake_c_out, seq_labels_,
                              l_type=self.args.wloss_type, weight=self.args.wloss_weight)
@@ -376,11 +448,12 @@ class WeatherTransfer(object):
         # discriminator loss
         with torch.no_grad():
             real_d_out = self.discriminator(images[::seq_len], labels)[0]
+            real_seq_d_out = self.seq_disc(sequence)
+
         d_loss = dis_hinge(fake_d_out, real_d_out)
+        seq_d_loss = dis_hinge(fake_seq_d_out, real_seq_d_out)
 
-        # losses = [g_loss_adv, g_loss_l1, g_loss_w, g_loss_con, g_loss_cyc, g_loss_seq, d_loss]
-        losses = [g_loss_adv, g_loss_l1, g_loss_w, g_loss_con, g_loss_seq, d_loss]
-
+        losses = [g_loss_adv, g_loss_l1, g_loss_w, g_loss_con, g_loss_cyc, g_loss_seq, d_loss, seq_d_loss]
         if self.args.distributed:
             losses_ = [to_python_float(reduce_tensor(loss.data, self.args)) for loss in losses]
         else:
@@ -394,7 +467,7 @@ class WeatherTransfer(object):
         for images, labels, seq_labels, photos in self.test_loader:
             images, labels, seq_labels = (d.cuda() for d in [images, labels, seq_labels])
             images = self.test_set.transform(images)
-            losses = self.eval_loss(images, labels, seq_labels)
+            losses = self.eval_loss(images, labels, seq_labels, self.seq_test_samples)
             losses_l.append(losses)
             seq_out = self.eval_seq_transform(images, labels, seq_labels)
             self.eval_each_sig_effect(images, labels, photos)
@@ -402,6 +475,7 @@ class WeatherTransfer(object):
                 seq_out_l.append(seq_out.cpu())
         losses = np.mean(np.array(losses_l), axis=0)
 
+        self.seq_test_samples.cpu()
         # --- WRITING SUMMARY ---#
         # g_loss_adv, g_loss_l1, g_loss_w, loss_con, g_loss_seq, d_loss
         if self.args.local_rank == 0:
@@ -410,9 +484,10 @@ class WeatherTransfer(object):
                 'losses/g_loss_l1/test': losses[1],
                 'losses/g_loss_w/test': losses[2],
                 'losses/loss_con/test': losses[3],
-                # 'losses/loss_cyc/test': losses[4],
-                'losses/loss_seq/test': losses[4],
-                'losses/d_loss/test': losses[5],
+                'losses/loss_cyc/test': losses[4],
+                'losses/loss_seq/test': losses[5],
+                'losses/d_loss/test': losses[6],
+                'losses/d_seq_loss/test': losses[7]
             })
 
             seq_out = torch.cat(seq_out_l, dim=1)
@@ -445,10 +520,12 @@ class WeatherTransfer(object):
         self.all_step = args.num_epoch * len(self.train_set) // self.batch_size
         g_loss_l = []
         g_loss_adv_l = []
+        g_loss_seq_adv_l = []
         d_loss_l = []
+        d_seq_loss_l = []
         g_loss_w_l = []
         g_loss_con_l = []
-        # g_loss_cyc_l = []
+        g_loss_cyc_l = []
         g_loss_l1_l = []
         g_loss_seq_l = []
 
@@ -458,6 +535,7 @@ class WeatherTransfer(object):
                 self.epoch += 1
             if args.distributed:
                 self.train_sampler.set_epoch(epoch)
+                self.seq_sampler.set_epoch(epoch)
 
             for i, data in enumerate(self.train_loader):
                 if args.local_rank == 0:
@@ -473,35 +551,49 @@ class WeatherTransfer(object):
                 images, con, seq_sig = (d.cuda() for d in data)
                 images = self.train_set.transform(images)
 
-                if images.size(0) != self.batch_size:
+                sequence = self.seq_loader.__next__()
+                sequence = torch.stack([
+                    self.seq_set.transform(sequence[i].cuda())
+                    for i in range(self.batch_size)], dim=0)
+                sequence = torch.transpose(sequence, 1, 2)
+
+                if images.size(0) != self.batch_size or sequence.size(0) != self.batch_size:
                     continue
 
                 # --- TRAINING --- #
                 images = images.unsqueeze(1).repeat(1, seq_len, 1, 1, 1).view(-1, 3, self.args.input_size, self.args.input_size)
                 if self.global_step % args.GD_train_ratio == 0:
-                    # g_loss, g_loss_adv, g_loss_seq_adv, r_loss, cyc_loss, w_loss, seq_loss, l1_loss \
-                    g_loss, g_loss_adv, r_loss, w_loss, seq_loss, l1_loss \
+                    g_loss, g_loss_adv, g_loss_seq_adv, r_loss, cyc_loss, w_loss, seq_loss, l1_loss \
                         = self.update_inference(images, con, seq_sig)
                     g_loss_l.append(g_loss)
                     g_loss_adv_l.append(g_loss_adv)
+                    g_loss_seq_adv_l.append(g_loss_seq_adv)
                     g_loss_w_l.append(w_loss)
                     g_loss_con_l.append(r_loss)
-                    # g_loss_cyc_l.append(cyc_loss)
+                    g_loss_cyc_l.append(cyc_loss)
                     g_loss_seq_l.append(seq_loss)
                     g_loss_l1_l.append(l1_loss)
-                d_loss = self.update_discriminator(images, con, seq_sig)
+                d_losses = self.update_discriminator(images, con, seq_sig, sequence)
+                d_loss = d_losses[0]
                 d_loss_l.append(d_loss)
+                if len(d_losses) == 2:
+                    d_seq_loss = d_losses[1]
+                    d_seq_loss_l.append(d_seq_loss)
 
                 # --- EVALUATION --- #
                 if self.global_step % self.eval_per_step == 0:
-                    del images
+                    del images, sequence
+                    self.seq_test_samples = self.seq_test_samples.cuda()
                     self.evaluation()
+
                     g_loss_l = g_loss_l[-100:]
                     g_loss_adv_l = g_loss_adv_l[-100:]
+                    g_loss_seq_adv_l = g_loss_seq_adv_l[-100:]
                     d_loss_l = d_loss_l[-100:]
+                    d_seq_loss_l = d_seq_loss_l[-100:]
                     g_loss_w_l = g_loss_w_l[-100:]
                     g_loss_con_l = g_loss_con_l[-100:]
-                    # g_loss_cyc_l = g_loss_cyc_l[-100:]
+                    g_loss_cyc_l = g_loss_cyc_l[-100:]
                     g_loss_l1_l = g_loss_l1_l[-100:]
                     g_loss_seq_l = g_loss_seq_l[-100:]
 
@@ -509,7 +601,8 @@ class WeatherTransfer(object):
                     tqdm_iter.set_postfix(OrderedDict(
                         d_loss=d_loss,
                         g_loss=g_loss,
-                        # s_g_loss=g_loss_seq_adv,
+                        s_d_loss=d_seq_loss,
+                        s_g_loss=g_loss_seq_adv,
                     ))
 
                     # --- LOSS POST-PROCESS --- #
@@ -517,12 +610,14 @@ class WeatherTransfer(object):
                         self.scalar_dict.update({
                             'losses/g_loss/train': np.mean(g_loss_l),
                             'losses/g_loss_adv/train': np.mean(g_loss_adv_l),
+                            'losses/g_loss_seq_adv/train': np.mean(g_loss_seq_adv_l),
                             'losses/g_loss_l1/train': np.mean(g_loss_l1_l),
                             'losses/g_loss_w/train': np.mean(g_loss_w_l),
                             'losses/loss_con/train': np.mean(g_loss_con_l),
-                            # 'losses/loss_cyc/train': np.mean(g_loss_cyc_l),
+                            'losses/loss_cyc/train': np.mean(g_loss_cyc_l),
                             'losses/loss_seq/train': np.mean(g_loss_seq_l),
                             'losses/d_loss/train': np.mean(d_loss_l),
+                            'losses/d_seq_loss/train': np.mean(d_seq_loss_l)
                         })
 
                     # --- UPDATE SUMMARY --- #
@@ -536,7 +631,7 @@ class WeatherTransfer(object):
                             state_dict = {
                                 'inference': self.inference.module.state_dict(),
                                 'discriminator': self.discriminator.module.state_dict(),
-                                # 'seq_disc': self.seq_disc.module.state_dict(),
+                                'seq_disc': self.seq_disc.module.state_dict(),
                                 'epoch': self.epoch,
                                 'global_step': self.global_step,
                                 'dataset_mean': self.df_mean.values,
@@ -546,7 +641,7 @@ class WeatherTransfer(object):
                             state_dict = {
                                 'inference': self.inference.state_dict(),
                                 'discriminator': self.discriminator.state_dict(),
-                                # 'seq_disc': self.seq_disc.state_dict(),
+                                'seq_disc': self.seq_disc.state_dict(),
                                 'epoch': self.epoch,
                                 'global_step': self.global_step,
                                 'dataset_mean': self.df_mean.values,

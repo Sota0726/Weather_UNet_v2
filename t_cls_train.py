@@ -2,10 +2,10 @@ import argparse
 import os
 from args import get_args
 args = get_args()
-
+args.distributed = False
 # GPU Setting
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
-os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
+os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
 import numpy as np
 import pandas as pd
@@ -29,6 +29,7 @@ if args.amp:
 
 from ops import *
 from utils import MakeOneHot
+from dataset import FlickrDataLoader
 
 
 class WeatherTransfer(object):
@@ -44,7 +45,7 @@ class WeatherTransfer(object):
         self.name = 'Flickr_{}_sampler-{}_wloss-{}_b1-{}_b2-{}_GDratio-{}'.format(
             self.args.name,
             self.args.sampler,
-            self.args.weather_loss,
+            self.args.wloss_type,
             self.args.adam_beta1,
             self.args.adam_beta2,
             self.args.GD_train_ratio
@@ -107,7 +108,7 @@ class WeatherTransfer(object):
         }
         del df, df_shuffle
         print(df_sep['train'].condition.value_counts())
-        loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], self.cols, transform=self.transform[s], class_id=True)
+        loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], self.cols, bs=args.batch_size, transform=self.transform[s], class_id=True)
 
         train_set = loader('train')
         test_set = loader('test')
@@ -146,7 +147,7 @@ class WeatherTransfer(object):
         self.train_set.transform = self.train_set.transform.to('cuda')
         self.test_set.transform = self.test_set.transform.to('cuda')
         self.random_loader = make_dataloader(self.train_set, args)
-        args.sampler = False
+        args.sampler = 'none'
         self.train_loader = make_dataloader(self.train_set, args)
         self.test_loader = make_dataloader(self.test_set, args)
 
@@ -198,7 +199,7 @@ class WeatherTransfer(object):
         lmda = torch.mean(torch.abs(pred_labels - r_labels), 1)
         loss_con = torch.mean(diff / (lmda + self.args.epsilon))  # Reconstraction loss
 
-        lmda_con, lmda_w = tuple(self.args.loss_lamda_cw)
+        lmda_con, lmda_w = (1, 1)
 
         g_loss = g_loss_adv + lmda_con * loss_con + lmda_w * g_loss_w
 
