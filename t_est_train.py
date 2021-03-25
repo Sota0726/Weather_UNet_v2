@@ -2,6 +2,7 @@ import argparse
 import os
 from args import get_args
 args = get_args()
+args.distributed = False
 
 # GPU Setting
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
@@ -28,6 +29,7 @@ if args.amp:
 
 from ops import *
 
+from dataset import FlickrDataLoader
 
 class WeatherTransfer(object):
 
@@ -107,7 +109,7 @@ class WeatherTransfer(object):
             'test': df_shuffle[df_shuffle['mode'] == 'test']
         }
         del df, df_shuffle
-        loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], self.cols, transform=self.transform[s])
+        loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], self.cols, bs=args.batch_size, transform=self.transform[s])
 
         train_set = loader('train')
         test_set = loader('test')
@@ -142,7 +144,7 @@ class WeatherTransfer(object):
         self.train_set.transform = self.train_set.transform.to('cuda')
         self.test_set.transform = self.test_set.transform.to('cuda')
         self.random_loader = make_dataloader(self.train_set, args)
-        args.sampler = False
+        args.sampler = 'none'
         self.train_loader = make_dataloader(self.train_set, args)
         self.test_loader = make_dataloader(self.test_set, args)
 

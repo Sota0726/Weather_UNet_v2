@@ -20,12 +20,12 @@ parser.add_argument('--pkl_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/outdoor_all_dbdate_wwo_weather_2016_17_delnoise_WoPerson_sky-10_L-05_50testImgs.pkl')
 parser.add_argument('--image_root', type=str, default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017')
 parser.add_argument('--cp_dir', type=str,
-                    default='cp/transfer/1204_cUNet_w-e_res101-1203L05e15_SNDisc_sampler-False_GDratio1-8_adam-b10.5-b20.9_lr-0.0001_bs-24_ne-150')
+                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/transfer/est/1204_cUNet_w-e_res101-1203L05e15_SNDisc_sampler-False_GDratio1-8_adam-b10.5-b20.9_lr-0.0001_bs-24_ne-150')
 parser.add_argument('--estimator_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/estimator/'
                             '1209_est_res101_val_WoPerson_ss-10_L05/est_resnet101_15_step62240.pt')
 parser.add_argument('--input_size', type=int, default=224)
-parser.add_argument('--batch_size', type=int, default=20)
+parser.add_argument('--batch_size', type=int, default=2)
 parser.add_argument('--num_workers', type=int, default=8)
 args = parser.parse_args()
 
@@ -70,7 +70,7 @@ if __name__ == '__main__':
     del df, df_, temp
     print('loaded {} data'.format(len(df_sep)))
 
-    dataset = FlickrDataLoader(args.image_root, df_sep, cols, transform=transform)
+    dataset = FlickrDataLoader(args.image_root, df_sep, cols, bs=args.batch_size, transform=transform)
 
     loader = torch.utils.data.DataLoader(
             dataset,
@@ -89,8 +89,9 @@ if __name__ == '__main__':
     bs = args.batch_size
     cp_paths = sorted(glob(os.path.join(args.cp_dir, '*.pt')), reverse=True)
     for cp_path in tqdm(cp_paths):
-        save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer/est',
-                                 cp_path.split('/')[-2], 'sig_pred_hist')
+        save_path = './temp_eval_estimator_transfer_all'
+        #save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer/est',
+        #                         cp_path.split('/')[-2], 'sig_pred_hist')
         os.makedirs(save_path, exist_ok=True)
         cp_name = cp_path.split('/')[-1].split('.pt')[0]
         # load model

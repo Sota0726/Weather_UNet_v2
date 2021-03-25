@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--gpu', type=str)
+parser.add_argument('--gpu', type=str, default='0')
 parser.add_argument('--pkl_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/outdoor_all_dbdate_wwo_weather_2016_17_delnoise_WoPerson_sky-10_L-05_50testImgs.pkl')
                     # default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/lambda_0/outdoor_all_dbdate_wwo_weather_2016_17_delnoise_WoPerson_sky-10_L-05.pkl')
@@ -70,9 +70,10 @@ def eval_est_trasnfer(batch, r_sig):
 
 
 if __name__ == '__main__':
-    save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/results/eval_est_transfer',
-                             args.cp_path.split('/')[-2],
-                             args.cp_path.split('/')[-1].split('_')[-2])
+    save_path = './temp_eval_estimator_transfer'
+    #save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/results/eval_est_transfer',
+    #                         args.cp_path.split('/')[-2],
+    #                         args.cp_path.split('/')[-1].split('_')[-2])
 
     os.makedirs(save_path, exist_ok=True)
     # os.makedirs(os.path.join(save_path, 'out'), exist_ok=True)
@@ -99,7 +100,7 @@ if __name__ == '__main__':
 
     print('loaded {} data'.format(len(df_sep)))
 
-    dataset = FlickrDataLoader(args.image_root, df_sep, cols, transform=transform)
+    dataset = FlickrDataLoader(args.image_root, df_sep, cols, bs=args.batch_size, transform=transform)
 
     loader = torch.utils.data.DataLoader(
         dataset,

@@ -71,7 +71,7 @@ if __name__ == '__main__':
 
     print('loaded {} signals data'.format(len(df_sep)))
     del df, df_, temp
-    dataset = FlickrDataLoader(args.image_root, df_sep, cols, transform=transform, inf=True)
+    dataset = FlickrDataLoader(args.image_root, df_sep, cols, bs=args.batch_size, transform=transform, inf=True)
 
     loader = torch.utils.data.DataLoader(
             dataset,
@@ -103,12 +103,14 @@ if __name__ == '__main__':
     bs = args.batch_size
     out_li = []
 
-    save_path_all = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'seq',
-                             args.cp_path.split('/')[-2],
-                             args.cp_path.split('/')[-1].split('.pt')[0], 'all_sig')
-    save_path_each = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'seq',
-                             args.cp_path.split('/')[-2],
-                             args.cp_path.split('/')[-1].split('.pt')[0], 'each_sig')
+    #save_path_all = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'seq',
+    #                         args.cp_path.split('/')[-2],
+    #                         args.cp_path.split('/')[-1].split('.pt')[0], 'all_sig')
+    #save_path_each = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'seq',
+    #                         args.cp_path.split('/')[-2],
+    #                         args.cp_path.split('/')[-1].split('.pt')[0], 'each_sig')
+    save_path_all = './temp_e_all_sig_all'
+    save_path_each = './temp_e_all_sig_each'
     os.makedirs(save_path_all, exist_ok=True)
     os.makedirs(save_path_each, exist_ok=True)
     for k, data in tqdm(enumerate(loader), total=len(df_sep)//bs):

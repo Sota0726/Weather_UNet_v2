@@ -69,7 +69,7 @@ def make_vid(save_path, p_name):
     video.release()
     return
 
-
+# 自前で撮影した画像列とセンサ値列に対する実験
 if __name__ == '__main__':
     transform = nn.Sequential(
         # transforms.Resize((args.input_size,) * 2),
@@ -100,6 +100,7 @@ if __name__ == '__main__':
         df_sep = df
         print('loaded {} signals data'.format(len(df_sep)))
         del df, df_, temp
+        # FlickrDataLoaderのself.labels = df['condition']をコメントアウト
         dataset = FlickrDataLoader(args.image_root, df_sep, cols, bs=args.batch_size, transform=transform, inf=True)
 
     loader = torch.utils.data.DataLoader(

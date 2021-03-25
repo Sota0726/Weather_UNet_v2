@@ -25,8 +25,8 @@ parser.add_argument('--csv_root', type=str, default='/mnt/HDD8T/takamuro/dataset
 parser.add_argument('--city', type=str, default='Abram')
 parser.add_argument('--date', nargs=4, required=True)
 parser.add_argument('-g', '--generator', type=str, default='cUNet')
-args = parser.parse_args()
-# args = parser.parse_args(args=['--date', '2016', '2', '21', '10'])
+# args = parser.parse_args()
+args = parser.parse_args(args=['--date', '2016', '2', '21', '10'])
 
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
@@ -84,7 +84,7 @@ if __name__ == '__main__':
     df_sep = df[df['mode'] == 'test']
 
     del df, df_
-    im_dataset = FlickrDataLoader(args.image_root, df_sep, cols, transform=transform, inf=True)
+    im_dataset = FlickrDataLoader(args.image_root, df_sep, cols, bs=args.batch_size, transform=transform, inf=True)
     sig_dateset = SensorLoader(args.csv_root, date=args.date, city=args.city, cols=cols, df_std=df_std, df_mean=df_mean)
 
     im_loader = torch.utils.data.DataLoader(
@@ -119,9 +119,10 @@ if __name__ == '__main__':
     bs = args.batch_size
     out_li = []
 
-    save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'seq',
-                             args.cp_path.split('/')[-2],
-                             args.cp_path.split('/')[-1].split('.pt')[0], 'video')
+    #save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'seq',
+    #                         args.cp_path.split('/')[-2],
+    #                         args.cp_path.split('/')[-1].split('.pt')[0], 'video')
+    save_path = './temp_e_MakeVid'
     os.makedirs(save_path, exist_ok=True)
     for i, data in tqdm(enumerate(im_loader), total=len(df_sep)//bs):
         batch = data[0].to('cuda')

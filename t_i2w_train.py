@@ -227,7 +227,7 @@ class WeatherTransfer(object):
         # Calc Generator Loss
         g_loss_adv = gen_hinge(fake_d_out)  # Adversarial loss
         g_loss_l1 = l1_loss(fake_out, images)
-        g_loss_w = pred_loss(fake_c_out, r_labels, cls=self.args.weather_loss)   # Weather prediction
+        g_loss_w = pred_loss(fake_c_out, r_labels, l_type=self.args.weather_loss)   # Weather prediction
 
         # abs_loss = torch.mean(torch.abs(fake_out - images), [1, 2, 3])
 
@@ -329,7 +329,7 @@ class WeatherTransfer(object):
             # g_loss_adv_.append(adv_loss(fake_d_out_, self.real).item())
             g_loss_adv_.append(gen_hinge(fake_d_out_).item())
             g_loss_l1_.append(l1_loss(fake_out_, images).item())
-            g_loss_w_.append(pred_loss(fake_c_out_, ref_labels_expand).item())
+            g_loss_w_.append(pred_loss(fake_c_out_, ref_labels_expand, l_type=self.args.weather_loss).item())
             d_loss_.append(dis_hinge(fake_d_out_, real_d_out_).item())
             # loss_con_.append(torch.mean(diff / (lmda + 1e-7).item())
 

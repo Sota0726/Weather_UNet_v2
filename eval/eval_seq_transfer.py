@@ -29,8 +29,8 @@ parser.add_argument('--csv_root', type=str, default='/mnt/HDD8T/takamuro/dataset
 parser.add_argument('--city', type=str, default='Abram')
 parser.add_argument('--date', nargs=4, required=True)
 parser.add_argument('-g', '--generator', type=str, default='cUNet')
-args = parser.parse_args()
-# args = parser.parse_args(args=['--date', '2016', '2', '21', '10'])
+# args = parser.parse_args()
+args = parser.parse_args(args=['--date', '2016', '2', '21', '10'])
 
 os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu

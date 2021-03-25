@@ -82,7 +82,7 @@ def get_args():
     parser.add_argument('-e', '--epsilon', type=float, default=1e-7)
     parser.add_argument('--lmda', type=float, default=None)
     parser.add_argument('--num_epoch', type=int, default=150)
-    parser.add_argument('--batch_size', '-bs', type=int, default=2)
+    parser.add_argument('--batch_size', '-bs', type=int, default=8)
     parser.add_argument('--seq_len', type=int, default=12)
     parser.add_argument('--num_workers', type=int, default=16)
     parser.add_argument('--GD_train_ratio', type=int, default=5)

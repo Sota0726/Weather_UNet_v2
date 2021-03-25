@@ -1,6 +1,6 @@
 import os
 from args import get_args
-from predictor import Predicor
+from predictor import Predictor
 
 import numpy as np
 from tqdm import trange
@@ -20,7 +20,7 @@ from ops import l1_loss, adv_loss  # , soft_transform
 
 
 if __name__ == '__main__':
-    estimator = Predicor(args, _type='est')
+    estimator = Predictor(args, _type='est')
 
     transform = estimator.train_set.transform.to('cuda')
     train_loader = estimator.train_loader
@@ -38,7 +38,7 @@ if __name__ == '__main__':
     writer = SummaryWriter(comment=comment)
 
     # train setting
-    opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
+    opt = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
 
     if args.amp:
         model, opt = amp.initialize(model, opt, opt_level='O1')

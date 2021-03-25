@@ -1,4 +1,3 @@
-import argparse
 import os
 from args import get_args
 args = get_args()
@@ -9,26 +8,19 @@ os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
 import numpy as np
 import pandas as pd
-from PIL import Image
 from tqdm import trange
 from collections import OrderedDict
-from glob import glob
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchvision as tv
 import torchvision.transforms as transforms
-import torchvision.models as models
-from torch.utils.data import Dataset
 from torch.utils.tensorboard import SummaryWriter
-from torchvision.utils import save_image, make_grid
 
 if args.amp:
     from apex import amp, optimizers
 
 from ops import *
-from utils import MakeOneHot
 from dataset import FlickrDataLoader
 
 

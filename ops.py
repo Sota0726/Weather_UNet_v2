@@ -201,7 +201,7 @@ def make_network(args, num_classes, name):
         inference.load_state_dict(sd['inference'])
         discriminator.load_state_dict(sd['discriminator'])
         epoch = sd['epoch']
-        global_step = sd['global_step'] - 1
+        global_step = sd['global_step']
         print('Success checkpoint loading!')
     else:
         print('Initialize training status.')

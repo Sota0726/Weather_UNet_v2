@@ -21,9 +21,30 @@ ampとdistirubutedを併用すれば学習速度が10倍くらいになる．
 ```
 cd docker
 
+# イメージの作成
 docker build -t [image name] .
+# weahter_transferはtorch18_takamuro
+# style_transferは torch041_styletransfer
 
+# コンテナの作成
 docker run -v /mnt/SSD2T/takamuro/:/mnt/HDD8T/takamuro -v /mnt/fs2:/mnt/fs2 -v /mnt/HDD8T/takamuro/m2/Weather_UNet_v2/:/home/sota/data/m2/ --gpus all --name [container name] --shm-size 16G -it [image name] bash
+
+# イメージの一覧
+docker images
+
+# コンテナの一覧
+docker ps --all
+
+# 起動しているコンテナの一覧
+docker ps
+
+# コンテナの起動
+docker start [container name]
+
+# コンテナに入る
+docker exec -it [container name] bash
+# weather_transferは weatherUNetV2
+# style_transferは photowct
 ```
 
 # 2. Train
@@ -43,7 +64,7 @@ docker run -v /mnt/SSD2T/takamuro/:/mnt/HDD8T/takamuro -v /mnt/fs2:/mnt/fs2 -v /
 詳細はargs.pyを参照
 
 ## 2.1 Classifier and estimantor training
-メインのコードはpredictor.py
+メインのコードは predictor.py
 
 ### 2.1.1 Classifier training
 
@@ -68,6 +89,7 @@ t_*_train.py が画像変換器の学習コード
 nameが同じであれば，基本的に学習は最新のcheckpointから再開される．
 - `--resume_cp` : 学習を再開するcheckpointへのパスを指定 
 - `--wloss_type` : どのweather lossを使用するか指定する．
+- `--GD_train_ratio` : GeratorとDiscriminatorの学習の比率を設定する．5だとGが一回学習する間にDは5回学習する．
 
 classifer : クラス分類器
 estimator : 信号値推定器
@@ -91,11 +113,11 @@ python t_seq_train.py --gpu [gpu id] --estimator_path [path to estimator checkpo
 ```
 追加のargs
 
-- `--seq_len` : シーケンスの長さ
-- `python -m torch.distributed.launch --nproc_per_node=[NUM_GPUS] t_[ANY_TRAIN_CODE].py --amp args []` : 分散学習のコマンド
+- `--seq_len` : シーケンスの長さ (ミニバッチがseq_len * batch_sizeになるので，バッチサイズ8だと12*8で96になり，gpuに乗り切らないので，bsを下げる)
+- `python -m torch.distributed.launch --nproc_per_node=[NUM_GPUS] t_[ANY_TRAIN_CODE].py --amp --gpu [gpu id 使う分だけ] args []` : 分散学習のコマンド
 分散学習時はampとの併用がおすすめ．
 分散学習を行う時はsamplerを使えない．実際にはdistribute用のsamplerが使用されているので，それと組み合わせたsamplerを自作すると使えないことはない．
-
+分散学習時のbsは一枚のgpuに乗せる値なので，1か2か3くらいになる．
 ## 2.3 Sampler
 samplerについて，クラス(晴れ，曇り，雨，雪，霧)がミニバッチ内で均等にするImbalancedDatasetSamplerと
 時間帯(0~5, 6~11, 12~17, 18~23　※調整可能)がミニバッチ内で均等にするTimeImbalancedDatasetSamplerがある．
@@ -106,6 +128,7 @@ ipynb内に学習データの作成や分析に使ったjupyterのファイル�
 sh内のwrite_image_summary.pyを使えば，指定したtensorboardに保存された画像を任意のdirに出力できる．
 
 # 3. Test codes
+全部checkpointへのパスと出力のパスをargsで指定すると動作する．
 評価用のコードはevalの中にある．
 - eval_class_trainsfer_all_cp.py : classのtransferの全checkpointを対象にテストするコード
 - eval_class_transfer.py : 任意のcheckpointのclass_transferについてテストするコード
@@ -116,14 +139,15 @@ sh内のwrite_image_summary.pyを使えば，指定したtensorboardに保存さ
 - eval_estimator.py : estimatorのテストコード
 - eval_seq_transfer.py : シーケンスのtranferの変換前後の信号値でmaeとmseでテストするコード
 - fid_score.py : 対象の画像群でfidを計算するコード
-- inception_score.py, or inception.py : inception scoreを計算するコード
+- inception_score.py: inception scoreを計算するコード
 
 # 4. Inference codes
 推論用のコードはinfeneceの中にある．
 主にestimatorやclassifierで画像に対する推定クラスや信号値を出力したり，
 transferの出力画像を保存するコードがある．
+全部checkpointへのパスと出力のパスをargsで指定すると動作する．
 
-- inf_classifier_i2w.py : classifierの推定結果を保存するコード
+- inf_classifier.py : i2wで学習したclassifierの推定結果を保存するコード
 - inf_estimator.py : estimatorの推定結果を画像とpklで保存するコード
 - inf_transfer_c.py : classで画像を変換するコード
 - inf_transfer_celeba.py : celebaの画像を変換するコード

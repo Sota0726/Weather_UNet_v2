@@ -77,7 +77,7 @@ class FlickrDataLoader(Dataset):
         self.photo_id = df['photo'].to_list()
         self.class_id = class_id
         self.conditions = df.loc[:, columns]
-        # self.labels = df['condition']
+        self.labels = df['condition']
 
         # df['orig_date_h'] = df['orig_date']
         # temp = df['orig_date_h'].str.split(':', expand=True)

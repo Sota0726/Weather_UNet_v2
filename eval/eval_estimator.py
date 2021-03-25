@@ -44,7 +44,7 @@ from dataset import FlickrDataLoader
 
 
 def make_matricx_img(df, pred, col):
-    dir_name = '/mnt/fs2/2019/Takamuro/db/photos_usa_2016/'
+    dir_name = args.image_root
     temp_df = df
     temp = pred
     # print(temp.shape)
@@ -102,7 +102,7 @@ def plot_hist(col, df, l1, pred, df_std, df_mean):
 
     ax = fig.add_subplot(1, 4, 3)
     ax.hist(l1, bins=100)
-    ax.set_xlabel('{}_LO'.format(col))
+    ax.set_xlabel('{}_L1'.format(col))
 
     ax = fig.add_subplot(1, 4, 4)
     ax.hist(l1_abs, bins=100)
@@ -114,9 +114,10 @@ def plot_hist(col, df, l1, pred, df_std, df_mean):
 if __name__ == '__main__':
 
     mode = args.mode
-    save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_estimator',
-                             args.estimator_path.split('/')[-2],
-                             'e' + args.estimator_path.split('/')[-1].split('_')[-2], mode)
+    save_path = './temp_eval_est/'
+    # save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_estimator',
+    #                          args.estimator_path.split('/')[-2],
+    #                          'e' + args.estimator_path.split('/')[-1].split('_')[-2], mode)
     os.makedirs(save_path, exist_ok=True)
     os.makedirs(os.path.join(save_path, 'input_imgs'), exist_ok=True)
 
@@ -160,7 +161,7 @@ if __name__ == '__main__':
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
 
-    dataset = FlickrDataLoader(args.image_root, df, cols, transform=transform, inf=True)
+    dataset = FlickrDataLoader(args.image_root, df, cols, bs=args.batch_size, transform=transform, inf=True)
 
     loader = torch.utils.data.DataLoader(
         dataset,
@@ -196,6 +197,7 @@ if __name__ == '__main__':
         y_true_l.append(signals)
         y_pred_l.append(preds)
 
+        # 出力画像を保存したければ，forの中のコメントアウトを外す
         for j in range(bs):
             signal = signals[j]
             pred = preds[j]
@@ -250,10 +252,10 @@ if __name__ == '__main__':
     print(std_l1)
     print((std_l1 * df_std))
 
-    # for i, col in enumerate(cols):
+    for i, col in enumerate(cols):
     #     tab_img = make_matricx_img(df, y_pred_l[:, i], col)
     #     # tab_img.save(os.path.join(save_path, 'est_{}.jpg'.format(col)))
-    #     plot_hist(col, df, l1_li[:, i], y_pred_l[:, i], df_std, df_mean)
+        plot_hist(col, df, l1_li[:, i], y_pred_l[:, i], df_std, df_mean)
 
     r2 = r2_score(y_true_l_n, y_pred_l_n)
     mae = mean_absolute_error(y_true_l_n, y_pred_l_n)

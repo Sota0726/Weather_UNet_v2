@@ -17,9 +17,7 @@ parser.add_argument('--image_root', type=str,
 parser.add_argument('--pkl_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/i2w/sepalated_data.pkl')
 parser.add_argument('--cp_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/transfer/'
-                    # 'cUNet_w-c-res101-0317_img-flicker-200k_aug_shuffle_adam-b1-09_wloss-CrossEnt/cUNet_w-c-res101-0317_img-flicker-200k_aug_shuffle_adam-b1-09_wloss-CrossEnt_e0025_s324000.pt')
-                    'cUNet_w-c-res101-0317_img-i2w_train-D1T1_adam-b1-00_aug_sampler_supervised_wloss-CrossEnt/cUNet_w-c-res101-0317_img-i2w_train-D1T1_aug_supervised_shuffle_adam-b1-09_wloss_CrossEnt_e0035_s132000.pt')
+                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/transfer/cls/1203_Flickr_cUNet_w-c_res101-1122e15_data-WoPerson_sky-10_L-05_SNdisc_sampler-True_loss_lamda-c1-w1-CE_b1-0.5_b2-0.9_GDratio-8_amp-True_MGpu-False_lr-1.5*0.0001_bs-24_ne-150/cUNet_cls_e0056_s600000.pt')
 parser.add_argument('--classifer_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/classifier/cls_res101_1122_NotPreTrain/resnet101_epoch15_step59312.pt')
 parser.add_argument('--input_size', type=int, default=224)
@@ -50,11 +48,6 @@ if __name__ == '__main__':
     s_li = ['sunny', 'cloudy', 'rain', 'snow', 'foggy']
     num_classes = len(s_li)
 
-    # transform = nn.Sequential(
-    #     # transforms.Resize((args.input_size,) * 2),
-    #     transforms.ConvertImageDtype(torch.float32),
-    #     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-    # )
     transform = transforms.Compose([
         transforms.Resize((args.input_size,) * 2),
         transforms.ToTensor(),
@@ -107,9 +100,10 @@ if __name__ == '__main__':
     out_li = []
 
     cp_name = args.cp_path.split('/')[-1].split('.')[0]
-    save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'cls',
-                             args.cp_path.split('/')[-2],
-                             cp_name.split('_')[-2] + cp_name.split('_')[-1], 'out_img')
+    save_path = './temp'
+    # save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'cls',
+    #                          args.cp_path.split('/')[-2],
+    #                          cp_name.split('_')[-2] + cp_name.split('_')[-1], 'out_img')
     print(save_path)
     print('If you have done to confirm save_path, please push enter')
     input()

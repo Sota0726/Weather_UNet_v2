@@ -11,7 +11,7 @@ import pandas as pd
 parser = argparse.ArgumentParser()
 parser.add_argument('--image_root', type=str, default='/mnt/fs2/2019/Takamuro/db/CelebA/Img/img_align_celeba')
 parser.add_argument('--pkl_path', type=str, default='/mnt/fs2/2019/Takamuro/db/CelebA/Anno/list_attr_celeba_add-mode.pkl')
-parser.add_argument('--cp_path', type=str, default='cp/classifier_celeba/1211_CelebA_wideres50_train50780/resnet101_epoch80_step64233.pt')
+parser.add_argument('--cp_path', type=str, default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/classifier_celeba/1211_CelebA_wideres50_train50780/resnet101_epoch80_step64233.pt')
 parser.add_argument('--gpu', type=str, default='2')
 parser.add_argument('--input_size', type=int, default=256)
 parser.add_argument('--batch_size', type=int, default=20)
@@ -29,9 +29,10 @@ sys.path.append(os.getcwd())
 from dataset import CelebALoader
 
 if __name__ == '__main__':
-    save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_classifier', 'CelebA',
-                             args.cp_path.split('/')[-2],
-                             args.cp_path.split('/')[-1].split('_')[-2])
+    save_path = './temp_eval_classifier_celeba'
+    #save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_classifier', 'CelebA',
+    #                         args.cp_path.split('/')[-2],
+    #                         args.cp_path.split('/')[-1].split('_')[-2])
     print(save_path)
     os.makedirs(save_path, exist_ok=True)
 

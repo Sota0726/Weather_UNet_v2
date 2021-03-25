@@ -116,7 +116,7 @@ if __name__ == '__main__':
             global_step += 1
 
         if epoch % save_per_epoch == 0:
-            out_path = os.path.join(classifier.save_dir, '{}_epoch{}_step{}.pt'.format(args.predictor, str(epoch), str(global_step)))
+            out_path = os.path.join(classifier.cls_save_dir, '{}_epoch{}_step{}.pt'.format(args.predictor, str(epoch), str(global_step)))
             torch.save(model, out_path)
 
     print('Done: training')

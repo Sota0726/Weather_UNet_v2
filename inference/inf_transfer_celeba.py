@@ -22,7 +22,7 @@ parser.add_argument('--classifier_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/classifier_celeba/1211_CelebA_cls_mobilenetV2_train50780/resnet101_epoch80_step32076.pt'
                     )
 parser.add_argument('--input_size', type=int, default=256)
-parser.add_argument('--batch_size', type=int, default=10)
+parser.add_argument('--batch_size', type=int, default=2)
 parser.add_argument('--num_workers', type=int, default=8)
 args = parser.parse_args()
 
@@ -53,6 +53,7 @@ if __name__ == '__main__':
 
     df = pd.read_pickle(args.pkl_path)
     df_ = df[df['mode'] == 'test']
+    print('{} data loaded'.format(len(df_)))
     dataset = CelebALoader(args.image_root, df_, transform=transform, inf=True)
 
     bs = args.batch_size
@@ -90,9 +91,10 @@ if __name__ == '__main__':
     attr_li = [4, 5, 8, 9, 15, 17, 23, 26, 31]
 
     cp_name = args.cp_path.split('/')[-1].split('.')[0]
-    save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'CelebA',
-                             args.cp_path.split('/')[-2],
-                             cp_name.split('_')[-2] + cp_name.split('_')[-1], 'attr_inf')
+    save_path = './temp_celeba'
+    #save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'CelebA',
+    #                         args.cp_path.split('/')[-2],
+    #                         cp_name.split('_')[-2] + cp_name.split('_')[-1], 'attr_inf')
     print(save_path)
     print('If you have done to confirm save_path, please push enter')
     input()

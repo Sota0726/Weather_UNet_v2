@@ -12,7 +12,7 @@ from sklearn.metrics import classification_report, confusion_matrix
 import seaborn as sns
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--gpu', type=str, default=1)
+parser.add_argument('--gpu', type=str, default="1")
 parser.add_argument('--image_root', type=str,
                     default='/mnt/fs2/2018/matsuzaki/dataset_fromnitta/Image/')
 parser.add_argument('--pkl_path', type=str,
@@ -38,9 +38,10 @@ from dataset import ClassImageLoader
 
 
 if __name__ == '__main__':
-    save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_classifier',
-                        args.classifier_path.split('/')[-2],
-                        args.classifier_path.split('/')[-1].split('_')[-2])
+    save_path = './temp_eval_classifier_i2w'
+    #save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_classifier',
+    #                    args.classifier_path.split('/')[-2],
+    #                    args.classifier_path.split('/')[-1].split('_')[-2])
     os.makedirs(save_path, exist_ok=True)
     sep_data = pd.read_pickle(args.pkl_path)
     sep_data = sep_data['test']

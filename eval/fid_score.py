@@ -63,6 +63,7 @@ parser.add_argument('--dims', type=int, default=2048,
                           'By default, uses pool3 features'))
 parser.add_argument('-c', '--gpu', default='', type=str,
                     help='GPU to use (leave blank for CPU only)')
+args = parser.parse_args(args=['/mnt/fs2/2019/Takamuro/db/i2w/2500_test_images_224x224/', '/mnt/fs2/2019/Takamuro/db/i2w/2500_test_images_224x224/', '-c', '0'])
 
 
 def imread(filename):
@@ -256,7 +257,6 @@ def calculate_fid_given_paths(paths, batch_size, cuda, dims):
 
 if __name__ == '__main__':
     # 入力画像はすべて同じサイズじゃないと動かない
-    args = parser.parse_args()
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     print('start calculating')
     fid_value = calculate_fid_given_paths(args.path,

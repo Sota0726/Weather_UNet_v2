@@ -21,8 +21,8 @@ parser.add_argument('--image_root', type=str,
 parser.add_argument('--pkl_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/i2w/sepalated_data.pkl')
 parser.add_argument('--cp_dir', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/transfer/'
-                    'cUNet_w-c-res101-0317_img-i2w_train-D1T1_aug_supervised_shuffle_adam-b1-09_wloss_CrossEnt/cUNet_w-c-res101-0317_img-i2w_train-D1T1_aug_supervised_shuffle_adam-b1-09_wloss_CrossEnt_e0035_s132000.pt')
+                    default='/mnt/fs2/2019/Takamuro/m2_research/'
+                    '/weather_transferV2/cp/transfer/cls/1203_Flickr_cUNet_w-c_res101-1122e15_data-WoPerson_sky-10_L-05_SNdisc_sampler-True_loss_lamda-c1-w1-CE_b1-0.5_b2-0.9_GDratio-8_amp-True_MGpu-False_lr-1.5*0.0001_bs-24_ne-150/')
                     #'cUNet_w-c-res101-0317_img-flicker-200k_aug_shuffle_adam-b1-09_wloss-CrossEnt/cUNet_w-c-res101-0317_img-flicker-200k_aug_shuffle_adam-b1-09_wloss-CrossEnt_e0025_s324000.pt')
 parser.add_argument('--classifer_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/classifier/cls_res101_i2w_sep-val_aug_20200408/resnet101_epoch15_step59312.pt')
@@ -103,8 +103,9 @@ if __name__ == '__main__':
         vec_li = []
 
         cp_name = cp_path.split('/')[-1].split('.pt')[0]
-        save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'cls',
-                                 cp_path.split('/')[-2], 'all_cm')
+        save_path = './temp_eval_class_transfer_all_cp'
+        #save_path = os.path.join('/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/results/eval_transfer', 'cls',
+        #                         cp_path.split('/')[-2], 'all_cm')
         # print(save_path)
         # print('If you have done to confirm save_path, please push enter')
         # input()

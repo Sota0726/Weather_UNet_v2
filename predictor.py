@@ -14,6 +14,7 @@ from ops import *
 class Predictor(object):
     def __init__(self, args, _type):
         self.args = args
+        self.args.distributed = False
         self.type = _type
         if self.type == 'cls':
             self.save_dir = os.path.join(args.cls_save_dir, args.dataset, args.name)
@@ -111,9 +112,9 @@ class Predictor(object):
             del df, df_
             print('{} train data were loaded'.format(len(df_sep['train'])))
             if self.type == 'cls':
-                loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], cols, transform=transform[s], class_id=True)
+                loader = lambda s: FlickrDataLoader(self.args.image_root, df_sep[s], cols, bs=self.args.batch_size, transform=transform[s], class_id=True)
             elif self.type == 'est':
-                loader = lambda s: FlickrDataLoader(args.image_root, df_sep[s], cols, transform=transform[s])
+                loader = lambda s: FlickrDataLoader(self.args.image_root, df_sep[s], cols, bs=self.args.batch_size, transform=transform[s])
 
         elif args.dataset == 'i2w':
             with open(args.i2w_pkl_path, 'rb') as f:
@@ -140,8 +141,8 @@ class Predictor(object):
             loader = lambda s: CelebALoader(root_path=args.celebA_root, df=df_sep[s], transform=transform[s])
         self.train_set = loader('train')
         self.test_set = loader('test')
-        self.train_loader = make_dataloader(self.train_set, args)
-        self.test_loader = make_dataloader(self.test_set, args)
+        self.train_loader = make_dataloader(self.train_set, self.args)
+        self.test_loader = make_dataloader(self.test_set, self.args)
         ##############
 
         # build network

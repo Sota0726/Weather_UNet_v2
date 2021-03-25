@@ -12,10 +12,10 @@ from tqdm import tqdm
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=int, default=2)
 parser.add_argument('--image_root', type=str,
-                    default='/mnt/fs2/2019/takamuro/db/photos_usa_2016/')
+                    default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017')
                     # default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/results/c_UNet/inf/cUNet_w-c-i2w-res101_img-i2w-train_sampler_D1T1_supervised_wloss-crossent_e0000_s1000/i2w')
 parser.add_argument('--pkl_path', type=str,
-                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/from_nitta/param03/outdoor_all_dbdate_withweather_selected_ent_withowner.pkl')
+                    default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp.pkl')
 parser.add_argument('--output_dir', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/from_nitta/param03/')
 # imb mean imbalanced
@@ -23,7 +23,7 @@ parser.add_argument('--classifer_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transfer/cp/classifier/i2w_classifier-res101-train-2020317/better_resnet101_epoch15_step59312.pt')
 # parser.add_argument('--classifer_path', type=str, default='cp/classifier/res_aug_5_cls/resnet101_95.pt')
 parser.add_argument('--input_size', type=int, default=224)
-parser.add_argument('--batch_size', type=int, default=18)
+parser.add_argument('--batch_size', type=int, default=1)
 parser.add_argument('--num_workers', type=int, default=4)
 parser.add_argument('--num_classes', type=int, default=5)
 parser.add_argument('--image_only', action='store_true')
@@ -55,14 +55,13 @@ if __name__ == '__main__':
     if args.gpu > 0:
         classifer.to('cuda')
 
-    transform = transforms.Compose([
+    cls_li = ['Clear', 'Clouds', 'Rain', 'Snow', 'Mist']
+    if args.image_only:
+        transform = transforms.Compose([
             transforms.Resize((args.input_size,)*2),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         ])
-
-    cls_li = ['Clear', 'Clouds', 'Rain', 'Snow', 'Mist']
-    if args.image_only:
         paths = sorted(glob(os.path.join(args.image_root, '*.jpg')))
         print('loaded {} data'.format(len(paths)))
 
@@ -71,6 +70,11 @@ if __name__ == '__main__':
         dataset = ImageLoader(paths=paths, transform=transform)
 
     if args.dataset == 'i2w':
+        transform = transforms.Compose([
+            transforms.Resize((args.input_size,)*2),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        ])
         cls_li = ['sunny', 'cloudy', 'rain', 'snow', 'foggy']
         df = pd.read_pickle(args.pkl_path)
         df = df['test']
@@ -79,13 +83,18 @@ if __name__ == '__main__':
         df['pred_condition'] = None
         dataset = ClassImageLoader(paths=df, transform=transform)
     elif args.dataset == 'flicker':
+        transform = nn.Sequential(
+            # transforms.Resize((args.input_size,) * 2),
+            transforms.ConvertImageDtype(torch.float32),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        )
         df = pd.read_pickle(args.pkl_path)
         df = df[df['mode'] == 'train']
-        cols = ['clouds', 'temp', 'humidity', 'pressure', 'windspeed']
+        cols = ['tempC', 'uvIndex', 'visibility', 'windspeedKmph', 'cloudcover', 'humidity', 'precipMM', 'pressure', 'DewPointC']
         print('loaded {} data'.format(len(df)))
 
         df['pred_condition'] = None
-        dataset = FlickrDataLoader(args.image_root, df, cols, transform, class_id=True)
+        dataset = FlickrDataLoader(args.image_root, df, cols, bs=args.batch_size, transform=transform, class_id=True)
 
     loader = torch.utils.data.DataLoader(
             dataset,
@@ -105,8 +114,10 @@ if __name__ == '__main__':
     for i, data in tqdm(enumerate(loader)):
         batch = data[0].to('cuda')
         ind_batch = data[1].to('cuda')
-
-        pred = torch.argmax(classifer(batch).detach(), 1)
+        if args.dataset == 'flicker':
+            batch = dataset.transform(batch)
+        pred_ = classifer(batch).detach()
+        pred = torch.argmax(pred_, 1)
 
         res_li.append(pred.int().cpu().view(bs, -1))
     all_res = torch.cat(res_li, 0).numpy()

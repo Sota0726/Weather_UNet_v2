@@ -15,13 +15,13 @@ parser.add_argument('--gpu', type=str, default='2')
 parser.add_argument('--pkl_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/flicker_data/wwo/2016_17/equal_con-cnn-mlp/outdoor_all_dbdate_wwo_weather_selected_ent_owner_2016_17_delnoise_addpred_equal_con-cnn-mlp.pkl')
 parser.add_argument('--image_root', type=str, 
-                    default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017')
+                    default='/mnt/HDD8T/takamuro/dataset/photos_usa_224_2016-2017/')
 parser.add_argument('--estimator_path', type=str,
                     default='/mnt/fs2/2019/Takamuro/m2_research/weather_transferV2/cp/estimator/'
                     'est_res101-1121_data-equal-mlp-con-gt_time-6-18/est_resnet101_15_step77424.pt'
                     )
 parser.add_argument('--input_size', type=int, default=224)
-parser.add_argument('--batch_size', type=int, default=16)
+parser.add_argument('--batch_size', type=int, default=2)
 parser.add_argument('--num_workers', type=int, default=8)
 parser.add_argument('--save_path', type=str)
 # parser.add_argument('--mode', type=str, default='test')
@@ -86,12 +86,13 @@ if __name__ == '__main__':
 
     photo_list = sorted(glob(os.path.join(args.image_root, '*', '*.jpg'), recursive=True))
     print('{} loaded'.format(len(photo_list)))
-    # torch >= 1.7
+    # for FlickerDataLoader
     # transform = nn.Sequential(
     #     transforms.ConvertImageDtype(torch.float32),
     #     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     #     )
 
+    # for ImageLoader
     transform = transforms.Compose([
         transforms.Resize((args.input_size,)*2),
         transforms.ToTensor(),
